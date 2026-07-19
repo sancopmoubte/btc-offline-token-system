@@ -4,184 +4,239 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BTC 离线密码学代币系统</title>
-    <script src="https://cdn.jsdelivr.net/npm/elliptic@6.5.4/dist/elliptic.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary-color: #f7931a; /* Bitcoin Orange */
+            --bg-color: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-color: #333;
+            --border-radius: 12px;
+        }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            background: #0a0e1a; color: #e0e0e0; line-height: 1.6;
-            padding: 20px; min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
-        .container { max-width: 850px; margin: 0 auto; }
-        h1 { text-align: center; color: #f7931a; font-size: 28px; margin-bottom: 5px; }
-        .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 30px; }
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
         .card {
-            background: #111827; border: 1px solid #1f2937; border-radius: 12px;
-            padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            background: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
         }
-        .card h2 {
-            color: #f7931a; font-size: 18px; margin-bottom: 16px;
-            padding-bottom: 10px; border-bottom: 1px solid #1f2937;
+        h2 {
+            margin-top: 0;
+            font-size: 1.25rem;
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 8px;
+            display: inline-block;
         }
-        .balance-display { text-align: center; padding: 30px; }
-        .balance-label { color: #888; font-size: 14px; margin-bottom: 8px; }
-        .balance-value { font-size: 48px; font-weight: bold; color: #f7931a; font-family: monospace; }
-        .balance-unit { font-size: 18px; color: #888; margin-top: 5px; }
-        .btn {
-            background: #f7931a; color: #000; border: none; padding: 12px 28px;
-            border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer;
-            transition: all 0.3s; display: inline-block; margin-top: 10px; margin-right: 8px;
+        .balance-container {
+            text-align: center;
+            padding: 10px;
         }
-        .btn:hover { background: #ffab40; transform: translateY(-1px); box-shadow: 0 4px 15px rgba(247,147,26,0.3); }
-        .btn:disabled { background: #333; color: #666; cursor: not-allowed; transform: none; box-shadow: none; }
-        .btn-secondary { background: #1f2937; color: #e0e0e0; border: 1px solid #374151; }
-        .btn-secondary:hover { background: #374151; }
-        .input-group { margin-bottom: 16px; }
-        .input-group label { display: block; color: #aaa; font-size: 13px; margin-bottom: 6px; }
-        .input-group input, .input-group textarea {
-            width: 100%; padding: 12px; background: #0a0e1a; border: 1px solid #374151;
-            border-radius: 8px; color: #e0e0e0; font-size: 14px; font-family: monospace;
+        .balance-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #2e7d32;
         }
-        .input-group input:focus, .input-group textarea:focus { outline: none; border-color: #f7931a; }
-        .input-group textarea { min-height: 140px; resize: vertical; }
-        .info-box {
-            background: #0a0e1a; border: 1px solid #374151; border-radius: 8px;
-            padding: 16px; margin-top: 12px; font-family: monospace; font-size: 12px;
-            word-break: break-all; color: #aaa;
+        .address-box {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            word-break: break-all;
+            margin: 10px 0;
+            border: 1px solid #eee;
+            max-height: 100px;
+            overflow-y: auto;
         }
-        .warning { color: #f7931a; font-size: 12px; margin-top: 8px; }
-        .success { color: #4ade80; font-size: 13px; margin-top: 8px; padding: 8px; background: rgba(74,222,128,0.1); border-radius: 6px; }
-        .error { color: #ef4444; font-size: 13px; margin-top: 8px; padding: 8px; background: rgba(239,68,68,0.1); border-radius: 6px; }
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 1rem;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            margin: 10px 0;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .secondary-btn {
+            background-color: #6c757d;
+        }
+        .mining-btn {
+            background-color: #28a745;
+        }
+        .withdraw-btn {
+            background-color: #dc3545;
+        }
+        .label {
+            font-weight: bold;
+            font-size: 0.9rem;
+            margin-top: 10px;
+            display: block;
+        }
+        .alert {
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+        }
+        .alert-info { background: #e3f2fd; color: #0d47a1; }
+        .alert-success { background: #e8f5e9; color: #1b5e20; }
+        .alert-error { background: #ffebee; color: #b71c1c; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .tabs {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            background: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            background: none;
+            color: #666;
+            margin: 0;
+            border-radius: 0;
+            border-bottom: 3px solid transparent;
+        }
+        .tab-btn.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
         .credential-output {
-            background: #0a0e1a; border: 1px solid #f7931a; border-radius: 8px;
+            background: #f8f9fa; border: 1px solid #f7931a; border-radius: 8px;
             padding: 16px; margin-top: 12px; font-family: monospace; font-size: 12px;
-            word-break: break-all; color: #4ade80; position: relative;
+            word-break: break-all; color: #2e7d32; position: relative;
         }
         .copy-btn {
-            position: absolute; top: 8px; right: 8px; background: #1f2937;
-            border: 1px solid #374151; color: #aaa; padding: 4px 12px;
+            position: absolute; top: 8px; right: 8px; background: #eee;
+            border: 1px solid #ddd; color: #666; padding: 4px 12px;
             border-radius: 4px; font-size: 12px; cursor: pointer;
         }
-        .copy-btn:hover { background: #374151; color: #fff; }
-        .timer { color: #888; font-size: 13px; margin-left: 10px; }
-        .hidden { display: none; }
-        .coin-list { margin-top: 12px; max-height: 250px; overflow-y: auto; }
-        .coin-item {
-            background: #0a0e1a; border: 1px solid #1f2937; border-radius: 6px;
-            padding: 10px; margin-bottom: 8px; font-size: 12px; font-family: monospace;
-        }
-        .coin-item.mining { border-left: 3px solid #60a5fa; }
-        .coin-item.transfer { border-left: 3px solid #4ade80; }
-        .coin-item.spent { border-left: 3px solid #ef4444; opacity: 0.5; }
-        .stats { display: flex; gap: 20px; margin-top: 10px; flex-wrap: wrap; }
-        .stat-box { background: #0a0e1a; border-radius: 8px; padding: 12px 16px; flex: 1; min-width: 120px; }
-        .stat-label { color: #888; font-size: 12px; }
-        .stat-value { color: #f7931a; font-size: 18px; font-weight: bold; font-family: monospace; }
+        .copy-btn:hover { background: #ddd; }
+        .success { color: #2e7d32; font-size: 13px; margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 6px; }
+        .error { color: #b71c1c; font-size: 13px; margin-top: 8px; padding: 8px; background: #ffebee; border-radius: 6px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>⚡ BTC 离线密码学代币系统</h1>
-        <div class="subtitle">基于 UTXO + ECDSA 的完全离线转账 — 代币即凭证，无法篡改</div>
+        <div class="header">
+            <h1>BTC 离线代币系统</h1>
+            <p>基于 ECDSA 密码学的完全离线转账</p>
+        </div>
 
-        <!-- 余额 -->
         <div class="card">
-            <div class="balance-display">
-                <div class="balance-label">当前余额</div>
-                <div class="balance-value" id="balance">0.00</div>
-                <div class="balance-unit">Tokens</div>
+            <div class="balance-container">
+                <div class="label">当前余额</div>
+                <div id="balance" class="balance-value">0.00</div>
+                <div>Tokens</div>
             </div>
-            <div class="stats">
-                <div class="stat-box">
-                    <div class="stat-label">持有代币数</div>
-                    <div class="stat-value" id="coin-count">0</div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" id="tab-identity" onclick="showTab('identity')">身份</button>
+            <button class="tab-btn" id="tab-send" onclick="showTab('send')">发送</button>
+            <button class="tab-btn" id="tab-receive" onclick="showTab('receive')">接收</button>
+            <button class="tab-btn" id="tab-mining" onclick="showTab('mining')">挖矿/提现</button>
+        </div>
+
+        <!-- 身份 Tab -->
+        <div id="identity" class="tab-content active">
+            <div class="card">
+                <h2>我的身份</h2>
+                <div id="identity-info">
+                    <p class="label">我的公钥 (地址):</p>
+                    <div id="pubkey" class="address-box">尚未生成</div>
+                    <button onclick="generateIdentity()">生成新身份</button>
+                    <button class="secondary-btn" onclick="exportIdentity()">导出身份备份</button>
+                    <button class="secondary-btn" onclick="importIdentityPrompt()">导入身份备份</button>
                 </div>
-                <div class="stat-box">
-                    <div class="stat-label">已花费</div>
-                    <div class="stat-value" id="spent-count">0</div>
-                </div>
             </div>
         </div>
 
-        <!-- 我的身份 -->
-        <div class="card">
-            <h2>🆔 我的身份</h2>
-            <div id="identity-none">
-                <p style="color: #888; font-size: 14px;">尚未生成身份，请点击下方按钮开始。</p>
-                <p class="warning">* 身份信息保存在浏览器本地，请勿清除缓存。</p>
-                <button class="btn" onclick="generateIdentity()">生成身份</button>
-            </div>
-            <div id="identity-exists" class="hidden">
-                <div class="input-group">
-                    <label>我的公钥（收款地址）</label>
-                    <div class="info-box" id="my-pubkey"></div>
-                </div>
-                <div class="warning">* 身份信息保存在浏览器本地，请勿清除缓存。</div>
-                <button class="btn btn-secondary" onclick="exportIdentity()">导出身份备份</button>
-                <button class="btn btn-secondary" onclick="importIdentityPrompt()">导入身份</button>
+        <!-- 发送 Tab -->
+        <div id="send" class="tab-content">
+            <div class="card">
+                <h2>发送代币</h2>
+                <p class="label">接收方公钥:</p>
+                <input type="text" id="dest-pubkey" placeholder="粘贴接收方的公钥">
+                <p class="label">发送金额:</p>
+                <input type="number" id="send-amount" placeholder="0.00" step="0.01">
+                <button onclick="createTransfer()">生成转账凭证</button>
+                <div id="send-result"></div>
             </div>
         </div>
 
-        <!-- 生成转账凭证 -->
-        <div class="card" id="transfer-section" style="opacity: 0.5; pointer-events: none;">
-            <h2>📤 生成转账凭证</h2>
-            <div class="input-group">
-                <label>接收方公钥</label>
-                <input type="text" id="recipient-pubkey" placeholder="粘贴接收方的公钥地址...">
+        <!-- 接收 Tab -->
+        <div id="receive" class="tab-content">
+            <div class="card">
+                <h2>接收代币</h2>
+                <p class="label">粘贴转账凭证:</p>
+                <textarea id="receive-credential" rows="6" placeholder="粘贴你收到的 JSON 凭证"></textarea>
+                <button onclick="processReceive()">验证并接收</button>
+                <div id="receive-result"></div>
             </div>
-            <div class="input-group">
-                <label>转账金额</label>
-                <input type="number" id="transfer-amount" placeholder="0.00" step="0.01" min="0.01">
-            </div>
-            <button class="btn" onclick="generateCredential()">生成转账凭证</button>
-            <div id="credential-result"></div>
         </div>
 
-        <!-- 验证并接收 -->
-        <div class="card" id="receive-section" style="opacity: 0.5; pointer-events: none;">
-            <h2>📥 验证并接收</h2>
-            <div class="input-group">
-                <label>粘贴收到的凭证</label>
-                <textarea id="receive-credential" placeholder="将收到的转账凭证粘贴到此处..."></textarea>
+        <!-- 挖矿 Tab -->
+        <div id="mining" class="tab-content">
+            <div class="card">
+                <h2>离线挖矿</h2>
+                <p>点击下方按钮模拟挖矿，系统将为您签发测试代币。</p>
+                <button class="mining-btn" id="mine-btn" onclick="mineTokens()">开始挖矿 (+1.00)</button>
+                <div id="mine-result"></div>
             </div>
-            <button class="btn" onclick="verifyAndReceive()">验证并接收</button>
-            <div id="receive-result"></div>
-        </div>
-
-        <!-- 挖矿 -->
-        <div class="card" id="mine-section" style="opacity: 0.5; pointer-events: none;">
-            <h2>⛏️ 挖矿与提现</h2>
-            <p style="color: #888; font-size: 14px; margin-bottom: 16px;">
-                每 2 秒可点击一次。系统会为每个新代币签名，确保来源合法且不可伪造。
-            </p>
-            <button class="btn" id="mine-btn" onclick="mineToken()">
-                挖矿 +1.00
-                <span class="timer" id="mine-timer"></span>
-            </button>
-            <div id="mine-result"></div>
-        </div>
-
-        <!-- 我的代币 -->
-        <div class="card" id="coins-section" style="opacity: 0.5; pointer-events: none;">
-            <h2>🪙 我的代币 (UTXO)</h2>
-            <p style="color: #888; font-size: 13px; margin-bottom: 10px;">
-                每个代币都是独立的密码学凭证。你无法修改它们，只能转移或花费。
-            </p>
-            <div class="coin-list" id="coin-list"></div>
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/elliptic@6.5.4/dist/elliptic.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script>
         const EC = elliptic.ec;
         const ec = new EC('secp256k1');
 
-        // ========== 系统密钥（硬编码，用于签名所有挖矿代币）==========
-        // 这是系统的"铸币权"，没有此私钥无法伪造代币
         const SYSTEM_PRIVKEY = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
         const SYSTEM_PUBKEY = '0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798';
 
-        // ========== 存储键 ==========
         const IDENTITY_KEY = 'btc_utxo_identity_v2';
         const COINS_KEY = 'btc_utxo_coins_v2';
         const SPENT_KEY = 'btc_utxo_spent_v2';
@@ -190,13 +245,18 @@
         let lastMineTime = 0;
         const MINE_COOLDOWN = 2000;
 
-        // ========== 初始化 ==========
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.getElementById('tab-' + tabId).classList.add('active');
+        }
+
         function init() {
             loadIdentity();
             updateUI();
         }
 
-        // ========== 身份管理 ==========
         function loadIdentity() {
             const stored = localStorage.getItem(IDENTITY_KEY);
             if (stored) {
@@ -238,48 +298,35 @@
                         const data = JSON.parse(event.target.result);
                         if (data.pubKey && data.privKey) {
                             identity = data; saveIdentity(); updateUI();
-                            showMsg('receive-result', '身份导入成功！', 'success');
+                            alert('身份导入成功！');
                         } else {
-                            showMsg('receive-result', '无效的身份文件', 'error');
+                            alert('无效的身份文件');
                         }
-                    } catch (err) { showMsg('receive-result', '文件解析失败', 'error'); }
+                    } catch (err) { alert('文件解析失败'); }
                 };
                 reader.readAsText(file);
             };
             input.click();
         }
 
-        // ========== 代币系统核心 ==========
-
-        // 获取系统密钥对象
         function getSystemKey() {
             return ec.keyFromPrivate(SYSTEM_PRIVKEY, 'hex');
         }
 
-        // 铸造新代币（系统签名）
         function mintCoin(ownerPubKey) {
             const timestamp = Date.now();
             const random = Math.random().toString(36).substring(2);
             const coinId = CryptoJS.SHA256(`${timestamp}:${ownerPubKey}:${random}`).toString();
-
             const coinData = {
-                id: coinId,
-                amount: 1.00,
-                type: 'mining',
-                createdAt: timestamp,
-                owner: ownerPubKey,
-                history: []
+                id: coinId, amount: 1.00, type: 'mining', createdAt: timestamp,
+                owner: ownerPubKey, history: []
             };
-
-            // 系统签名：证明这是合法铸造的代币，且绑定到特定所有者
             const msg = `MINT:${coinId}:${coinData.amount}:${ownerPubKey}:${timestamp}`;
             const sig = getSystemKey().sign(CryptoJS.SHA256(msg).toString()).toDER('hex');
             coinData.mintSignature = sig;
-
             return coinData;
         }
 
-        // 验证代币的系统签名
         function verifyMintSignature(coin) {
             try {
                 const msg = `MINT:${coin.id}:${coin.amount}:${coin.owner}:${coin.createdAt}`;
@@ -289,36 +336,22 @@
             } catch (e) { return false; }
         }
 
-        // 验证代币的完整链条
         function verifyCoinChain(coin) {
-            // 1. 验证系统铸造签名
-            if (!verifyMintSignature(coin)) return { valid: false, reason: '系统铸造签名无效' };
-
-            // 2. 验证历史转账链条
+            if (!verifyMintSignature(coin)) return { valid: false, reason: '系统签名无效' };
             let currentOwner = coin.owner;
             for (const tx of coin.history || []) {
                 const msg = `TRANSFER:${coin.id}:${tx.from}:${tx.to}:${tx.amount}:${tx.timestamp}`;
                 const hash = CryptoJS.SHA256(msg).toString();
                 try {
                     const fromKey = ec.keyFromPublic(tx.from, 'hex');
-                    if (!fromKey.verify(hash, tx.signature)) {
-                        return { valid: false, reason: '历史转账签名无效' };
-                    }
-                } catch (e) {
-                    return { valid: false, reason: '历史转账公钥格式错误' };
-                }
+                    if (!fromKey.verify(hash, tx.signature)) return { valid: false, reason: '历史签名无效' };
+                } catch (e) { return { valid: false, reason: '公钥格式错误' }; }
                 currentOwner = tx.to;
             }
-
-            // 最终所有者应该是历史最后一笔的接收方，或原始所有者
-            const expectedOwner = coin.history.length > 0
-                ? coin.history[coin.history.length - 1].to
-                : coin.owner;
-
+            const expectedOwner = coin.history.length > 0 ? coin.history[coin.history.length - 1].to : coin.owner;
             return { valid: true, owner: expectedOwner };
         }
 
-        // 获取本地存储的代币
         function getCoins() {
             const stored = localStorage.getItem(COINS_KEY);
             return stored ? JSON.parse(stored) : [];
@@ -341,85 +374,44 @@
             }
         }
 
-        // 计算余额（实时验证，不存储数字）
         function calculateBalance() {
-            if (!identity) return { balance: 0, count: 0, spent: 0 };
+            if (!identity) return 0;
             const coins = getCoins();
             const spentIds = getSpentIds();
-            let balance = 0, count = 0, spent = 0;
-
+            let balance = 0;
             for (const coin of coins) {
                 const v = verifyCoinChain(coin);
-                const isSpent = spentIds.includes(coin.id);
-
-                if (isSpent) {
-                    spent++;
-                    continue;
-                }
-
-                // 只有当前所有者是我的代币才算余额
-                if (v.valid && v.owner === identity.pubKey) {
+                if (v.valid && v.owner === identity.pubKey && !spentIds.includes(coin.id)) {
                     balance += coin.amount;
-                    count++;
                 }
             }
-            return { balance, count, spent };
+            return balance;
         }
 
-        // ========== 挖矿 ==========
-        function mineToken() {
+        function mineTokens() {
+            if (!identity) { alert('请先生成身份'); return; }
             const now = Date.now();
-            if (now - lastMineTime < MINE_COOLDOWN) {
-                showMsg('mine-result', '请等待冷却时间结束', 'error');
-                return;
-            }
-
+            if (now - lastMineTime < MINE_COOLDOWN) return;
             lastMineTime = now;
             const newCoin = mintCoin(identity.pubKey);
             const coins = getCoins();
             coins.push(newCoin);
             saveCoins(coins);
             updateUI();
-            showMsg('mine-result', `⛏️ 挖矿成功！铸造代币 ID: ${shorten(newCoin.id)}`, 'success');
-
-            // 冷却
-            const btn = document.getElementById('mine-btn');
-            btn.disabled = true;
-            let remaining = 2;
-            const timerEl = document.getElementById('mine-timer');
-            timerEl.textContent = `(冷却: ${remaining}s)`;
-            const interval = setInterval(() => {
-                remaining--;
-                if (remaining <= 0) {
-                    clearInterval(interval);
-                    btn.disabled = false;
-                    timerEl.textContent = '';
-                } else {
-                    timerEl.textContent = `(冷却: ${remaining}s)`;
-                }
-            }, 1000);
+            showMsg('mine-result', '挖矿成功！+1.00', 'success');
         }
 
-        // ========== 转账 ==========
-        function generateCredential() {
-            const recipient = document.getElementById('recipient-pubkey').value.trim();
-            const amount = parseFloat(document.getElementById('transfer-amount').value);
+        function createTransfer() {
+            const recipient = document.getElementById('dest-pubkey').value.trim();
+            const amount = parseFloat(document.getElementById('send-amount').value);
+            if (!recipient || isNaN(amount) || amount <= 0) { showMsg('send-result', '请输入有效的接收方和金额', 'error'); return; }
+            const balance = calculateBalance();
+            if (amount > balance) { showMsg('send-result', '余额不足', 'error'); return; }
 
-            if (!recipient) { showMsg('credential-result', '请输入接收方公钥', 'error'); return; }
-            if (!amount || amount <= 0) { showMsg('credential-result', '请输入有效的转账金额', 'error'); return; }
-
-            try { ec.keyFromPublic(recipient, 'hex'); }
-            catch (e) { showMsg('credential-result', '接收方公钥格式无效', 'error'); return; }
-
-            const { balance } = calculateBalance();
-            if (amount > balance) { showMsg('credential-result', '余额不足', 'error'); return; }
-
-            // 选择足够的代币来支付
             const coins = getCoins();
             const spentIds = getSpentIds();
             const myCoins = [];
             let selectedAmount = 0;
-
             for (const coin of coins) {
                 const v = verifyCoinChain(coin);
                 if (v.valid && v.owner === identity.pubKey && !spentIds.includes(coin.id)) {
@@ -429,232 +421,66 @@
                 }
             }
 
-            if (selectedAmount < amount) {
-                showMsg('credential-result', '可用代币不足（可能部分代币验证失败）', 'error');
-                return;
-            }
-
-            // 构建转账凭证
             const timestamp = Date.now();
             const transferCoins = [];
             const key = ec.keyFromPrivate(identity.privKey, 'hex');
-
             for (const coin of myCoins) {
-                const txRecord = {
-                    from: identity.pubKey,
-                    to: recipient,
-                    amount: coin.amount,
-                    timestamp: timestamp
-                };
+                const txRecord = { from: identity.pubKey, to: recipient, amount: coin.amount, timestamp: timestamp };
                 const msg = `TRANSFER:${coin.id}:${txRecord.from}:${txRecord.to}:${txRecord.amount}:${timestamp}`;
                 txRecord.signature = key.sign(CryptoJS.SHA256(msg).toString()).toDER('hex');
-
-                // 更新代币历史
-                coin.history = coin.history || [];
                 coin.history.push(txRecord);
-
-                transferCoins.push({
-                    coin: coin,
-                    tx: txRecord
-                });
-
-                // 标记为已花费
+                transferCoins.push(coin);
                 addSpentId(coin.id);
-            }
-
-            // 找零：如果选多了，给自己找零
-            const change = selectedAmount - amount;
-            if (change > 0.001) {
-                const changeCoin = mintCoin(identity.pubKey);
-                const changeTx = {
-                    from: identity.pubKey,
-                    to: identity.pubKey,
-                    amount: change,
-                    timestamp: timestamp + 1
-                };
-                const changeMsg = `TRANSFER:${changeCoin.id}:${changeTx.from}:${changeTx.to}:${changeTx.amount}:${changeTx.timestamp}`;
-                changeTx.signature = key.sign(CryptoJS.SHA256(changeMsg).toString()).toDER('hex');
-                changeCoin.history.push(changeTx);
-                transferCoins.push({ coin: changeCoin, tx: changeTx });
             }
 
             saveCoins(coins);
             updateUI();
 
-            const credential = {
-                version: '1.0',
-                timestamp: timestamp,
-                sender: identity.pubKey,
-                recipient: recipient,
-                totalAmount: amount,
-                coins: transferCoins.map(tc => tc.coin)
-            };
-
-            const credentialJson = JSON.stringify(credential, null, 2);
-            document.getElementById('credential-result').innerHTML = `
-                <div style="margin-top: 12px; color: #4ade80; font-size: 13px;">
-                    ✅ 转账凭证已生成！共转移 ${amount.toFixed(2)} Tokens<br>
-                    使用了 ${myCoins.length} 个代币，凭证已签名保护，无法篡改。
-                </div>
+            const credential = { sender: identity.pubKey, recipient: recipient, amount: amount, coins: transferCoins };
+            const json = JSON.stringify(credential, null, 2);
+            document.getElementById('send-result').innerHTML = `
                 <div class="credential-output">
                     <button class="copy-btn" onclick="copyToClipboard(this)">复制</button>
-                    <pre style="margin: 0; white-space: pre-wrap;">${escapeHtml(credentialJson)}</pre>
+                    <pre style="margin: 0; white-space: pre-wrap;">${json}</pre>
                 </div>
             `;
         }
 
-        // ========== 接收 ==========
-        function verifyAndReceive() {
+        function processReceive() {
             const input = document.getElementById('receive-credential').value.trim();
-            if (!input) { showMsg('receive-result', '请粘贴凭证内容', 'error'); return; }
-
-            let credential;
-            try { credential = JSON.parse(input); }
-            catch (e) { showMsg('receive-result', '凭证格式无效', 'error'); return; }
-
-            if (!credential.coins || !Array.isArray(credential.coins)) {
-                showMsg('receive-result', '凭证不包含代币数据', 'error'); return;
-            }
-
-            let received = 0;
-            let errors = [];
-            const spentIds = getSpentIds();
-            const myCoins = getCoins();
-            const myCoinIds = new Set(myCoins.map(c => c.id));
-
-            for (const coin of credential.coins) {
-                // 检查是否双花
-                if (spentIds.includes(coin.id)) {
-                    errors.push(`代币 ${shorten(coin.id)} 已被花费`);
-                    continue;
-                }
-
-                // 检查是否已拥有
-                if (myCoinIds.has(coin.id)) {
-                    errors.push(`代币 ${shorten(coin.id)} 已存在于本地`);
-                    continue;
-                }
-
-                // 验证完整链条
-                const v = verifyCoinChain(coin);
-                if (!v.valid) {
-                    errors.push(`代币 ${shorten(coin.id)} 验证失败: ${v.reason}`);
-                    continue;
-                }
-
-                // 验证最终所有者是我
-                if (v.owner !== identity.pubKey) {
-                    errors.push(`代币 ${shorten(coin.id)} 所有者不匹配`);
-                    continue;
-                }
-
-                // 验证最后一笔转账签名
-                if (coin.history && coin.history.length > 0) {
-                    const lastTx = coin.history[coin.history.length - 1];
-                    const msg = `TRANSFER:${coin.id}:${lastTx.from}:${lastTx.to}:${lastTx.amount}:${lastTx.timestamp}`;
-                    const hash = CryptoJS.SHA256(msg).toString();
-                    try {
-                        const fromKey = ec.keyFromPublic(lastTx.from, 'hex');
-                        if (!fromKey.verify(hash, lastTx.signature)) {
-                            errors.push(`代币 ${shorten(coin.id)} 最后一笔签名无效`);
-                            continue;
-                        }
-                    } catch (e) {
-                        errors.push(`代币 ${shorten(coin.id)} 签名验证异常`);
-                        continue;
+            if (!input) return;
+            try {
+                const credential = JSON.parse(input);
+                const spentIds = getSpentIds();
+                const myCoins = getCoins();
+                let received = 0;
+                for (const coin of credential.coins) {
+                    if (spentIds.includes(coin.id)) continue;
+                    const v = verifyCoinChain(coin);
+                    if (v.valid && v.owner === identity.pubKey) {
+                        myCoins.push(coin);
+                        received += coin.amount;
                     }
                 }
-
-                // 通过所有验证，收入囊中
-                myCoins.push(coin);
-                received += coin.amount;
-            }
-
-            saveCoins(myCoins);
-            updateUI();
-
-            if (received > 0) {
-                let msg = `✅ 成功接收 ${received.toFixed(2)} Tokens`;
-                if (errors.length > 0) msg += `（${errors.length} 个代币验证失败）`;
-                showMsg('receive-result', msg, 'success');
+                saveCoins(myCoins);
+                updateUI();
+                showMsg('receive-result', `成功接收 ${received.toFixed(2)} Tokens`, 'success');
                 document.getElementById('receive-credential').value = '';
-            } else {
-                showMsg('receive-result', `❌ 接收失败: ${errors.join('; ')}`, 'error');
-            }
+            } catch (e) { showMsg('receive-result', '凭证解析失败', 'error'); }
         }
 
-        // ========== UI 更新 ==========
         function updateUI() {
-            const { balance, count, spent } = calculateBalance();
+            const balance = calculateBalance();
             document.getElementById('balance').textContent = balance.toFixed(2);
-            document.getElementById('coin-count').textContent = count;
-            document.getElementById('spent-count').textContent = spent;
-
             if (identity) {
-                document.getElementById('identity-none').classList.add('hidden');
-                document.getElementById('identity-exists').classList.remove('hidden');
-                document.getElementById('my-pubkey').textContent = identity.pubKey;
-
-                ['transfer-section', 'receive-section', 'mine-section', 'coins-section'].forEach(id => {
-                    document.getElementById(id).style.opacity = '1';
-                    document.getElementById(id).style.pointerEvents = 'auto';
-                });
-            } else {
-                document.getElementById('identity-none').classList.remove('hidden');
-                document.getElementById('identity-exists').classList.add('hidden');
-
-                ['transfer-section', 'receive-section', 'mine-section', 'coins-section'].forEach(id => {
-                    document.getElementById(id).style.opacity = '0.5';
-                    document.getElementById(id).style.pointerEvents = 'none';
-                });
+                document.getElementById('pubkey').textContent = identity.pubKey;
             }
-
-            renderCoinList();
         }
 
-        function renderCoinList() {
-            if (!identity) return;
-            const coins = getCoins();
-            const spentIds = getSpentIds();
-            const container = document.getElementById('coin-list');
-
-            const myCoins = coins.filter(c => {
-                const v = verifyCoinChain(c);
-                return v.valid && (v.owner === identity.pubKey || c.owner === identity.pubKey);
-            });
-
-            if (myCoins.length === 0) {
-                container.innerHTML = '<div style="color: #666; font-size: 13px;">暂无代币</div>';
-                return;
-            }
-
-            let html = '';
-            for (const coin of myCoins) {
-                const isSpent = spentIds.includes(coin.id);
-                const v = verifyCoinChain(coin);
-                const currentOwner = v.owner || coin.owner;
-                const isMine = currentOwner === identity.pubKey;
-                const type = coin.type === 'mining' ? 'mining' : 'transfer';
-                const status = isSpent ? 'spent' : (isMine ? type : 'spent');
-
-                html += `<div class="coin-item ${status}">
-                    <div style="display:flex; justify-content:space-between;">
-                        <span style="color:#f7931a; font-weight:bold;">${coin.amount.toFixed(2)} TOKEN</span>
-                        <span style="color:${isSpent ? '#ef4444' : '#4ade80'};">${isSpent ? '已花费' : (isMine ? '可用' : '已转出')}</span>
-                    </div>
-                    <div style="color:#666; margin-top:4px;">ID: ${shorten(coin.id)}</div>
-                    <div style="color:#666;">来源: ${coin.type === 'mining' ? '挖矿' : '转账'} | 历史: ${coin.history?.length || 0} 笔</div>
-                </div>`;
-            }
-            container.innerHTML = html;
-        }
-
-        // ========== 工具函数 ==========
         function showMsg(id, msg, type) {
             const el = document.getElementById(id);
             el.className = type;
             el.textContent = msg;
-            setTimeout(() => { el.textContent = ''; el.className = ''; }, 6000);
         }
 
         function copyToClipboard(btn) {
@@ -665,18 +491,6 @@
             });
         }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function shorten(str) {
-            if (!str || str.length < 20) return str;
-            return str.slice(0, 12) + '...' + str.slice(-12);
-        }
-
-        // 启动
         init();
     </script>
 </body>
