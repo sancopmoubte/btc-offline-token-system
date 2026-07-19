@@ -77,8 +77,7 @@
         button {
             width: 100%;
             padding: 14px;
-            margin: 10px 0;
-            border: none;
+            margin: 10px 0; border: none;
             border-radius: 8px;
             background-color: var(--primary-color);
             color: white;
@@ -192,7 +191,7 @@
         
         <div id="voucher-result" style="display:none;">
             <span class="label">转账凭证 (请复制发给对方):</span>
-            <textarea id="voucher-output" rows="5" readonly></textarea>
+            <textarea id="voucher-output" rows="5" readonly=""></textarea>
             <button class="secondary-btn" onclick="copyText('voucher-output')">复制凭证</button>
         </div>
     </div>
@@ -212,7 +211,7 @@
         <div class="alert alert-info">每 2 秒可点击一次生成 1.00 代币。</div>
         <button id="mining-btn" class="mining-btn" onclick="mineToken()">点击挖矿 (每2秒)</button>
         <hr>
-        <button class="withdraw-btn" onclick="withdraw()">提现</button>
+        <button class="withdraw-btn" onclick="withdraw()">提现显示手机号</button>
     </div>
 </div>
 
@@ -417,29 +416,29 @@
     }
 
     function withdraw() {
-        alert('提现功能开发中，当前余额: ' + state.balance.toFixed(2));
+        alert('提现请求已提交！\n联系客服手机号：15932447705');
     }
 
-    // --- 工具函数 ---
+    // --- 辅助工具 ---
     function showTab(tabId) {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
         document.getElementById(tabId).classList.add('active');
-        event.target.classList.add('active');
+        if (event) event.currentTarget.classList.add('active');
     }
 
     function copyText(id) {
         const el = document.getElementById(id);
-        const text = el.tagName === 'TEXTAREA' ? el.value : el.innerText;
+        const text = el.value || el.innerText;
         navigator.clipboard.writeText(text).then(() => alert('已复制到剪贴板'));
     }
 
     function bufferToBase64(buf) {
-        return btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+        return btoa(String.fromCharCode(...new Uint8Array(buf)));
     }
 
     function base64ToBuffer(base64) {
-        const binary_string = atob(base64);
+        const binary_string = window.atob(base64);
         const len = binary_string.length;
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) {
@@ -468,6 +467,7 @@
         );
     }
 
+    // 启动
     init();
 </script>
 
