@@ -1,0 +1,16 @@
+{
+  "chain": [
+    {
+      "index": 0,
+      "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "timestamp": 0,
+      "transactions": [
+        {
+          "type": "genesis",
+          "amount": 0
+        }
+      ],
+      "hash": "3d8d22899a36c78da2aa082360f36ba770db9d312dd1a5c49687fec6287a39ee"
+    }
+  ]
+}

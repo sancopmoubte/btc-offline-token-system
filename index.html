@@ -20,7 +20,7 @@
   <div id="integrity" class="status"><i class="dot"></i><b id="integrityText">正在加载抗量子库…</b><small id="integrityMeta">首次打开需联网</small></div>
   <main class="grid">
     <section class="card"><div class="sub">当前身份余额</div><div id="balance" class="balance">0.00</div><div class="sub">PQC COIN · 链上重放结果</div><div class="stats"><div class="stat"><b id="height">0</b><span>区块高度</span></div><div class="stat"><b id="txCount">0</b><span>交易数量</span></div><div class="stat"><b id="pending">0</b><span>待打包</span></div><div class="stat"><b id="supply">0</b><span>发行 / 2100万</span></div></div></section>
-    <section class="card"><h2>本地节点</h2><div class="notice">节点数 <b>1</b> · 数据只保存在本设备 localStorage。仅用于学习演示，请勿存放真实资产。</div><button class="secondary" id="exportBtn">导出链 JSON</button><button class="secondary" id="importBtn">导入链 JSON</button><div id="importStatus" class="notice">支持本网页导出的完整备份，也支持只含 chain 数组的链 JSON。</div><input id="importFile" type="file" accept="application/json" class="hidden"></section>
+    <section class="card"><h2>GitHub 共享节点</h2><div class="notice">公共链文件：<b>chain.json</b>。所有设备启动时读取同一份 GitHub 链；挖矿后的新链需要把导出的 JSON 更新回仓库，GitHub Pages 才会同步给其他设备。</div><button class="secondary" id="exportBtn">导出链 JSON</button><button class="secondary" id="importBtn">导入链 JSON</button><div id="importStatus" class="notice">支持本网页导出的完整备份，也支持只含 chain 数组的链 JSON。</div><input id="importFile" type="file" accept="application/json" class="hidden"></section>
     <section class="card wide"><div class="tabs"><button class="active" data-tab="identity">身份</button><button data-tab="mine">挖矿</button><button data-tab="transfer">转账</button><button data-tab="blocks">区块浏览器</button></div>
       <div id="identity" class="panel active"><h2>身份管理</h2><div class="notice">算法：<b>ML‑DSA‑44</b>（NIST FIPS 204，128-bit security level）。私钥只在本机生成并保存。</div><div id="myAddressBox" class="my-address hidden"><div class="sub">我的短收款地址（公钥哈希指纹）</div><textarea id="myAddress" readonly></textarea><button id="copyMainAddress" class="copy-main">复制我的短地址</button></div><div id="identities"></div><button id="newIdentity">生成新身份</button></div>
       <div id="mine" class="panel"><h2>铸造 coinbase</h2><p class="sub">每 1 秒可以点击一次。初始奖励 50，按每 210,000 个铸币区块永久减半：50 → 25 → 12.5 → 6.25…；理论总量无限接近 <b>21,000,000</b>，但永远不会主动补齐。</p><button id="mineBtn">铸造当前奖励</button><div id="mineMsg" class="notice">铸造后会生成新区块，并重新验签、验哈希、核对余额。</div></div>
@@ -31,7 +31,7 @@
   <div class="foot">PQC Solo Chain · localStorage demo · 链数据可导出备份，未来可交给第二个节点</div>
 </div>
 <script type="module">
-  const STORAGE='pqc_solo_chain_v1'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
+  const STORAGE='pqc_solo_chain_v1'; const SHARED_CHAIN_URL='https://raw.githubusercontent.com/sancopmoubte/btc-offline-token-system/main/chain.json'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
   const ZERO='0'.repeat(64); const enc=new TextEncoder();
   let pqc, state={chain:[],pending:[],identities:{},archived:{},active:null};
   const $=id=>document.getElementById(id);
@@ -70,11 +70,12 @@
   }
   async function boot(){
     try{const noble=await import('https://cdn.jsdelivr.net/npm/@noble/post-quantum@0.7.1/ml-dsa.js/+esm'); pqc={ml_dsa44:noble.ml_dsa44};
-      const raw=localStorage.getItem(STORAGE); if(raw)state=JSON.parse(raw); state.archived=state.archived||{};
+      const raw=localStorage.getItem(STORAGE); const local=raw?JSON.parse(raw):null; if(local)state=local; state.archived=state.archived||{};
+      const sharedResponse=await fetch(SHARED_CHAIN_URL+'?t='+Date.now(),{cache:'no-store'}); if(sharedResponse.ok){const shared=await sharedResponse.json(); if(Array.isArray(shared.chain)&&shared.chain.length){state.chain=shared.chain; state.pending=[]; state.sharedSource='github:chain.json';}}
       for(const id of Object.values(state.identities||{})){if(id.publicKey&&!id.shortAddress)id.shortAddress=await address(id.publicKey)}
       if(!state.chain?.length)state.chain=[await makeGenesis()];
-      const check=await verifyChain(); if(!check.ok)throw Error('链初始化失败'); save(); render(); setStatus(true,'链完整性 ✓',`ML‑DSA‑44 · ${state.chain.length-1} 个区块`);
-    }catch(e){console.error(e);setStatus(false,'链完整性 ✕ '+e.message,'请检查数据或重新导入');render();}
+      const check=await verifyChain(); if(!check.ok)throw Error('链初始化失败'); save(); render(); setStatus(true,'共享链完整性 ✓',`GitHub chain.json · ${state.chain.length-1} 个区块`);
+    }catch(e){console.error(e);setStatus(false,'共享链加载失败：'+e.message,'请检查 GitHub chain.json 或导入备份');render();}
   }
   function setStatus(ok,text,meta){$('integrity').className='status '+(ok?'ok':'bad');$('integrityText').textContent=text;$('integrityMeta').textContent=meta}
   function render(){
