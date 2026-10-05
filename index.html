@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#08111f">
-  <title>PQC Solo Chain · 抗量子单机链</title>
+  <title>猫猫币 MMC · 共享链</title>
   <style>
     :root{--bg:#08111f;--panel:#101d31;--panel2:#14243b;--line:#223653;--text:#e9f1ff;--muted:#8fa4c2;--cyan:#62e6ff;--green:#55e69a;--amber:#ffc857;--red:#ff7185;--radius:18px}
     *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 85% -10%,#17365b 0,#08111f 42%);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;min-height:100vh}
@@ -16,10 +16,10 @@
 </head>
 <body>
 <div class="wrap">
-  <header class="hero"><div><div class="eyebrow">PQC · SOLO NODE · LOCAL FIRST</div><h1>抗量子单机链</h1><p>一条运行在 iPhone Safari 里的个人区块链：ML‑DSA‑44 签名、区块哈希首尾相连、余额从链上重放得出。</p></div><div class="mark">⛓️</div></header>
+  <header class="hero"><div><div class="eyebrow">MMC · SHARED NODE · LOCAL FIRST</div><h1>猫猫币 MMC</h1><p>一条运行在 iPhone Safari 里的个人区块链：ML‑DSA‑44 签名、区块哈希首尾相连、余额从链上重放得出。</p></div><div class="mark">⛓️</div></header>
   <div id="integrity" class="status"><i class="dot"></i><b id="integrityText">正在加载抗量子库…</b><small id="integrityMeta">首次打开需联网</small></div>
   <main class="grid">
-    <section class="card"><div class="sub">当前身份余额</div><div id="balance" class="balance">0.00</div><div class="sub">PQC COIN · 链上重放结果</div><div class="stats"><div class="stat"><b id="height">0</b><span>区块高度</span></div><div class="stat"><b id="txCount">0</b><span>交易数量</span></div><div class="stat"><b id="pending">0</b><span>待打包</span></div><div class="stat"><b id="supply">0</b><span>发行 / 2100万</span></div></div></section>
+    <section class="card"><div class="sub">当前身份余额</div><div id="balance" class="balance">0.00</div><div class="sub">猫猫币 MMC · 链上重放结果</div><div class="stats"><div class="stat"><b id="height">0</b><span>区块高度</span></div><div class="stat"><b id="txCount">0</b><span>交易数量</span></div><div class="stat"><b id="pending">0</b><span>待打包</span></div><div class="stat"><b id="supply">0</b><span>发行 / 2100万</span></div></div></section>
     <section class="card"><h2>Supabase 共享节点</h2><div class="notice">公共链由 Supabase 共享节点保存。所有设备启动时读取同一条链；新区块会自动写入共享节点并实时同步到其他设备。GitHub 的 chain.json 作为备份保留。</div><button class="secondary" id="exportBtn">导出完整备份</button><button class="secondary" id="exportSharedBtn">导出共享 chain.json</button><button class="secondary" id="importBtn">导入链 JSON</button><div id="importStatus" class="notice">支持本网页导出的完整备份，也支持只含 chain 数组的链 JSON。</div><input id="importFile" type="file" accept="application/json" class="hidden"></section>
     <section class="card wide"><div class="tabs"><button class="active" data-tab="identity">身份</button><button data-tab="mine">挖矿</button><button data-tab="transfer">转账</button><button data-tab="blocks">区块浏览器</button></div>
       <div id="identity" class="panel active"><h2>身份管理</h2><div class="notice">算法：<b>ML‑DSA‑44</b>（NIST FIPS 204，128-bit security level）。私钥只在本机生成并保存。</div><div id="myAddressBox" class="my-address hidden"><div class="sub">我的短收款地址（公钥哈希指纹）</div><textarea id="myAddress" readonly></textarea><button id="copyMainAddress" class="copy-main">复制我的短地址</button></div><div id="identities"></div><button id="newIdentity">生成新身份</button></div>
@@ -28,7 +28,7 @@
       <div id="blocks" class="panel"><h2>链上区块</h2><div id="blocksList" class="chain"></div></div>
     </section>
   </main>
-  <div class="foot">PQC Solo Chain · localStorage demo · 链数据可导出备份，未来可交给第二个节点</div>
+  <div class="foot">猫猫币 MMC · localStorage demo · 链数据可导出备份，Supabase 共享节点实时同步</div>
 </div>
 <script type="module">
   const STORAGE='pqc_solo_chain_v1'; const SHARED_CHAIN_URL='https://raw.githubusercontent.com/sancopmoubte/btc-offline-token-system/main/chain.json'; const SUPABASE_URL='https://bnmzgivkpnscknerphao.supabase.co'; const SUPABASE_ANON_KEY='sb_publishable_pKeZYSs6V9szuQWPEvd_LA_7YDI_T6e'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
