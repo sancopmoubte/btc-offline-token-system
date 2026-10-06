@@ -96,7 +96,7 @@
       const latest=await fetch(SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash&order=height.desc&limit=1',{headers:apiHeaders,cache:'no-store'});
       if(!latest.ok)throw Error('Supabase 共享节点 HTTP '+latest.status);
       const latestRows=await latest.json(); const remoteHeight=latestRows.length?Number(latestRows[0].height):-1; const localHeight=state.chain.length-1;
-      if(remoteHeight===localHeight){state.sharedSource='supabase:chain_blocks_raw (本地缓存已是最新)';return true;}
+      if(remoteHeight===localHeight){if(latestRows[0].block_hash!==state.chain.at(-1).hash)throw Error('共享节点出现分叉：最新区块哈希不匹配');state.sharedSource='supabase:chain_blocks_raw (本地缓存已是最新)';return true;}
       if(remoteHeight>localHeight){
         const rows=await fetchSupabaseRows('height=gt.'+localHeight); const incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
         if(incoming.length){if(incoming[0].prevHash!==state.chain.at(-1).hash)throw Error('共享节点出现分叉：新增区块前哈希不匹配');state.chain.push(...incoming);state.pending=[];state.sharedSource='supabase:chain_blocks_raw (增量同步 '+incoming.length+' 个区块)';state.verifiedHeight=null;state.verifiedHash=null;return true;}
