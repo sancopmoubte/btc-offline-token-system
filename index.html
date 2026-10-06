@@ -76,15 +76,24 @@
   }
   function subscribeSupabase(){
     supabaseClient.channel('shared-chain-sync').on('postgres_changes',{event:'INSERT',schema:'public',table:'chain_blocks_raw'},async()=>{
-      try{if(await loadSupabaseChain()){save();render();setStatus(true,'共享链实时同步 ✓',`Supabase · ${state.chain.length-1} 个区块`)}}catch(e){console.warn('共享链实时同步失败',e)}
+      try{
+        if(state.localBackupOverride)return;
+        if(await loadSupabaseChain()){save();render();setStatus(true,'共享链实时同步 ✓',`Supabase · ${state.chain.length-1} 个区块`)}
+      }catch(e){console.warn('共享链实时同步失败',e)}
     }).subscribe();
   }
   async function boot(){
     try{const noble=await import('https://cdn.jsdelivr.net/npm/@noble/post-quantum@0.7.1/ml-dsa.js/+esm'); pqc={ml_dsa44:noble.ml_dsa44};
       const sb=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'); supabaseClient=sb.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
       const raw=localStorage.getItem(STORAGE); const local=raw?JSON.parse(raw):null; if(local)state=local; state.archived=state.archived||{};
-      let loaded=await loadSupabaseChain();
-      if(!loaded){const sharedResponse=await fetch(SHARED_CHAIN_URL+'?t='+Date.now(),{cache:'no-store'}); if(sharedResponse.ok){const shared=await sharedResponse.json(); if(Array.isArray(shared.chain)&&shared.chain.length){state.chain=shared.chain; state.pending=[]; state.sharedSource='github:chain.json';}}}
+      let loaded=false;
+      if(state.localBackupOverride&&Array.isArray(state.chain)&&state.chain.length){
+        loaded=true;
+        state.sharedSource='local:full-backup';
+      }else{
+        loaded=await loadSupabaseChain();
+        if(!loaded){const sharedResponse=await fetch(SHARED_CHAIN_URL+'?t='+Date.now(),{cache:'no-store'}); if(sharedResponse.ok){const shared=await sharedResponse.json(); if(Array.isArray(shared.chain)&&shared.chain.length){state.chain=shared.chain; state.pending=[]; state.sharedSource='github:chain.json';}}}
+      }
       for(const id of Object.values(state.identities||{})){if(id.publicKey&&!id.shortAddress)id.shortAddress=await address(id.publicKey)}
       if(!state.chain?.length)state.chain=[await makeGenesis()];
       const check=await verifyChain(); if(!check.ok)throw Error('链初始化失败'); save(); render(); setStatus(true,'共享链完整性 ✓',`${state.sharedSource==='supabase:chain_blocks'?'Supabase':'GitHub'} · ${state.chain.length-1} 个区块`); subscribeSupabase();
@@ -130,7 +139,9 @@
       if(!state.active||!state.identities[state.active])state=({...state,active:Object.keys(state.identities)[0]||null});
       const check=await verifyChain();
       if(!check.ok)throw Error(check.error||'链完整性校验失败');
-      save(); render(); setStatus(true,'链完整性 ✓','已导入并验证 '+state.chain.length+' 个区块'); notice($('importStatus'),'导入成功：区块内容和哈希均保持原样。','success');
+      state.localBackupOverride=true;
+      state.sharedSource='local:full-backup';
+      save(); render(); setStatus(true,'完整备份恢复成功 ✓','本机已恢复 '+state.chain.length+' 个区块'); notice($('importStatus'),'导入成功：地址、余额、私钥和区块均已恢复；区块哈希保持原样。','success');
     }catch(err){state=old; render(); setStatus(false,'导入失败',err.message||String(err)); notice($('importStatus'),'导入失败：'+(err.message||String(err))+'；未修改原链和区块哈希。','error')}
     finally{e.target.value=''}
   };
