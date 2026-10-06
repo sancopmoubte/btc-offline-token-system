@@ -79,11 +79,33 @@
     }
     const supply=supplyOf(); if(supply>MAX_SUPPLY)throw Error('总发行量超过 21,000,000'); return {ok:true,balances,supply};
   }
+  const apiHeaders={apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY};
+  async function fetchSupabaseRows(extra='',descending=false){
+    const rows=[]; const order=descending?'height.desc':'height.asc';
+    for(let start=0;;start+=1000){
+      const url=SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text'+(extra?'&'+extra:'')+'&order='+order;
+      const page=await fetch(url,{headers:{...apiHeaders,Range:start+'-'+(start+999)},cache:'no-store'});
+      if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);
+      const part=await page.json(); rows.push(...part); if(part.length<1000)break;
+    }
+    return rows;
+  }
   async function loadSupabaseChain(){
-    const r=await fetch(SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text&order=height.asc',{headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY},cache:'no-store'});
-    if(!r.ok)throw Error('Supabase 共享节点 HTTP '+r.status);
-    const rows=[]; for(let start=0;;start+=1000){const page=await fetch(SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text&order=height.asc',{headers:{apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY,Range:start+'-'+(start+999)},cache:'no-store'}); if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status); const part=await page.json(); rows.push(...part); if(part.length<1000)break} const incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean);
-    if(incoming.length){state.chain=incoming; state.pending=[]; state.sharedSource='supabase:chain_blocks'; return true} return false;
+    const hasLocal=!state.localBackupOverride&&Array.isArray(state.chain)&&state.chain.length>0;
+    if(hasLocal){
+      const latest=await fetch(SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash&order=height.desc&limit=1',{headers:apiHeaders,cache:'no-store'});
+      if(!latest.ok)throw Error('Supabase 共享节点 HTTP '+latest.status);
+      const latestRows=await latest.json(); const remoteHeight=latestRows.length?Number(latestRows[0].height):-1; const localHeight=state.chain.length-1;
+      if(remoteHeight===localHeight){state.sharedSource='supabase:chain_blocks (本地缓存已是最新)';return true;}
+      if(remoteHeight>localHeight){
+        const rows=await fetchSupabaseRows('height=gt.'+localHeight); const incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
+        if(incoming.length){if(incoming[0].prevHash!==state.chain.at(-1).hash)throw Error('共享节点出现分叉：新增区块前哈希不匹配');state.chain.push(...incoming);state.pending=[];state.sharedSource='supabase:chain_blocks (增量同步 '+incoming.length+' 个区块)';state.verifiedHeight=null;state.verifiedHash=null;return true;}
+        return true;
+      }
+      // 远端高度回退时，重新读取远端完整链；不修改任何区块，只选择当前共享节点版本。
+    }
+    const rows=await fetchSupabaseRows(); const incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
+    if(incoming.length){state.chain=incoming;state.pending=[];state.sharedSource='supabase:chain_blocks (首次完整同步)';state.verifiedHeight=null;state.verifiedHash=null;return true} return false;
   }
   function subscribeSupabase(){
     supabaseClient.channel('shared-chain-sync').on('postgres_changes',{event:'INSERT',schema:'public',table:'chain_blocks_raw'},async()=>{
@@ -107,7 +129,7 @@
       }
       for(const id of Object.values(state.identities||{})){if(id.publicKey&&!id.shortAddress)id.shortAddress=await address(id.publicKey)}
       if(!state.chain?.length)state.chain=[await makeGenesis()];
-      const check=await verifyChain(); if(!check.ok)throw Error('链初始化失败'); save(); render(); setStatus(true,'共享链完整性 ✓',`${state.sharedSource==='supabase:chain_blocks'?'Supabase':'GitHub'} · ${state.chain.length-1} 个区块`); subscribeSupabase();
+      const tip=state.chain.at(-1); const cachedVerified=state.verifiedHeight===tip.index&&state.verifiedHash===tip.hash; const check=cachedVerified?{ok:true}:{ok:await verifyChain().then(()=>true).catch(e=>{throw e})}; if(!check.ok)throw Error('链初始化失败'); state.verifiedHeight=tip.index;state.verifiedHash=tip.hash; save(); render(); setStatus(true,'共享链完整性 ✓',`${state.sharedSource&&state.sharedSource.startsWith('supabase:')?'Supabase':'GitHub'} · ${state.chain.length-1} 个区块${cachedVerified?' · 本地验证缓存':''}`); subscribeSupabase();
     }catch(e){console.error(e);setStatus(false,'共享链加载失败：'+e.message,'请检查 Supabase 共享节点或导入备份');render();}
   }
   function setStatus(ok,text,meta){$('integrity').className='status '+(ok?'ok':'bad');$('integrityText').textContent=text;$('integrityMeta').textContent=meta}
