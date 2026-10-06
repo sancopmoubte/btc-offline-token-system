@@ -18,7 +18,7 @@ declare
   next_height integer;
   next_timestamp bigint;
   reward numeric;
-  coinbase json;
+  coinbase_text text;
   transactions_text text;
   core_text text;
   block_hash text;
@@ -55,11 +55,14 @@ begin
    where tx->>'type' = 'coinbase';
   reward := coalesce(reward, 50);
 
-  coinbase := json_build_object('type','coinbase','to',p_to,'amount',reward,'schedule','halving-v1');
+  -- 使用 float8 输出与浏览器 JSON.stringify 一致的金额格式（50，而不是 50.0000000000000000）。
+  coinbase_text := '{"type":"coinbase","to":' || to_json(p_to)::text
+    || ',"amount":' || to_json(reward::float8)::text
+    || ',"schedule":"halving-v1"}';
   if p_transactions::text = '[]' then
-    transactions_text := '[' || coinbase::text || ']';
+    transactions_text := '[' || coinbase_text || ']';
   else
-    transactions_text := rtrim(p_transactions::text, ']') || ',' || coinbase::text || ']';
+    transactions_text := rtrim(p_transactions::text, ']') || ',' || coinbase_text || ']';
   end if;
 
   core_text := '{"index":' || next_height::text

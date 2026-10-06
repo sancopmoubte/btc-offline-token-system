@@ -32,7 +32,7 @@
 </div>
 <script type="module">
   const STORAGE='pqc_solo_chain_v1'; const SHARED_CHAIN_URL='https://raw.githubusercontent.com/sancopmoubte/btc-offline-token-system/main/chain.json'; const SUPABASE_URL='https://bnmzgivkpnscknerphao.supabase.co'; const SUPABASE_ANON_KEY='sb_publishable_pKeZYSs6V9szuQWPEvd_LA_7YDI_T6e'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
-  const ZERO='0'.repeat(64); const enc=new TextEncoder();
+  const ZERO='0'.repeat(64); const GENESIS_HASH='3d8d22899a36c78da2aa082360f36ba770db9d312dd1a5c49687fec6287a39ee'; const enc=new TextEncoder();
   let pqc, supabaseClient, state={chain:[],pending:[],identities:{},archived:{},active:null};
   const DB_NAME='catcat_mmc_local_v1', DB_STORE='state';
   let idbWriteVersion=0;
@@ -121,8 +121,10 @@
       const local=await loadPersistedState(); if(local)state=local; state.archived=state.archived||{};
       let loaded=false;
       if(state.localBackupOverride&&Array.isArray(state.chain)&&state.chain.length){
-        loaded=true;
-        state.sharedSource='local:full-backup';
+        const tipResponse=await fetch(SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash&order=height.desc&limit=1',{headers:apiHeaders,cache:'no-store'}); const remoteTip=tipResponse.ok?(await tipResponse.json())[0]:null;
+        if(remoteTip&&Number(remoteTip.height)===0&&remoteTip.block_hash===GENESIS_HASH&&state.chain.length>1){
+          state.localBackupOverride=false; state.verifiedHeight=null; state.verifiedHash=null; loaded=await loadSupabaseChain();
+        }else{loaded=true;state.sharedSource='local:full-backup';}
       }else{
         loaded=await loadSupabaseChain();
         if(!loaded){const sharedResponse=await fetch(SHARED_CHAIN_URL+'?t='+Date.now(),{cache:'no-store'}); if(sharedResponse.ok){const shared=await sharedResponse.json(); if(Array.isArray(shared.chain)&&shared.chain.length){state.chain=shared.chain; state.pending=[]; state.sharedSource='github:chain.json';}}}
