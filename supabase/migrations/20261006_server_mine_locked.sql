@@ -37,9 +37,9 @@ begin
     raise exception 'INVALID_TRANSACTIONS: client cannot submit coinbase';
   end if;
 
-  select height, block_hash into tip
-    from public.chain_blocks_raw
-   order by height desc
+  select r.height, r.block_hash into tip
+    from public.chain_blocks_raw as r
+   order by r.height desc
    limit 1
    for update;
 
@@ -66,7 +66,7 @@ begin
     || ',"prevHash":' || to_json(tip.block_hash)::text
     || ',"timestamp":' || next_timestamp::text
     || ',"transactions":' || transactions_text || '}';
-  block_hash := encode(digest(convert_to(core_text, 'UTF8'), 'sha256'), 'hex');
+  block_hash := encode(extensions.digest(convert_to(core_text, 'UTF8'), 'sha256'), 'hex');
   full_text := left(core_text, length(core_text) - 1) || ',"hash":' || to_json(block_hash)::text || '}';
 
   insert into public.chain_blocks_raw
@@ -74,10 +74,10 @@ begin
   values
     (next_height, block_hash, tip.block_hash, full_text, full_text::jsonb);
 
-  select height, block_hash, prev_hash, block_text
+  select r.height, r.block_hash, r.prev_hash, r.block_text
     into saved
-    from public.chain_blocks_raw
-   where height = next_height;
+    from public.chain_blocks_raw as r
+   where r.height = next_height;
 
   return jsonb_build_object(
     'ok', true,
