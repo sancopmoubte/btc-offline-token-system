@@ -106,7 +106,34 @@
   document.querySelectorAll('[data-tab]').forEach(btn=>btn.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));btn.classList.add('active');$(btn.dataset.tab).classList.add('active')});
   function downloadJson(name,data){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)}
   $('exportBtn').onclick=()=>downloadJson('pqc-solo-chain-backup.json',state); $('exportSharedBtn').onclick=()=>downloadJson('chain.json',{chain:state.chain});
-  $('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;const old=state;try{const raw=JSON.parse(await f.text());const incoming=Array.isArray(raw)?{chain:raw}:raw;if(!incoming||!Array.isArray(incoming.chain))throw Error('文件不是有效的链 JSON：缺少 chain 数组');if(incoming.chain.length===0)throw Error('链 JSON 为空');state={chain:incoming.chain,pending:Array.isArray(incoming.pending)?incoming.pending:[],identities:incoming.identities&&typeof incoming.identities==='object'?incoming.identities:{},archived:incoming.archived&&typeof incoming.archived==='object'?incoming.archived:{},active:incoming.active||null};for(const id of Object.values({...state.identities,...state.archived})){if(id.publicKey&&!id.shortAddress)id.shortAddress=await address(id.publicKey)}if(!state.active||!state.identities[state.active])state.active=Object.keys(state.identities)[0]||null;const check=await verifyChain();if(!check.ok)throw Error(check.error||'导入链校验失败');save();render();setStatus(true,'链完整性 ✓','已导入并验证 '+state.chain.length+' 个区块');notice($('importStatus'),'导入成功：链已验证，当前身份和余额已更新。','success')}catch(err){state=old;render();setStatus(false,'导入失败',err.message);notice($('importStatus'),'导入失败：'+err.message,'error')}finally{e.target.value=''}};
+  $('importBtn').onclick=()=>$('importFile').click();
+  $('importFile').onchange=async e=>{
+    const f=e.target.files[0]; if(!f)return;
+    const old=state;
+    try{
+      const raw=JSON.parse(await f.text());
+      const isArray=Array.isArray(raw);
+      const incoming=isArray?{chain:raw}:raw;
+      if(!incoming||!Array.isArray(incoming.chain))throw Error('文件不是有效的链 JSON：缺少 chain 数组');
+      if(incoming.chain.length===0)throw Error('链 JSON 为空');
+      if(incoming.chain.some(b=>!b||typeof b!=='object'||typeof b.hash!=='string'||typeof b.prevHash!=='string'))throw Error('区块字段不完整：未修改原文件');
+      const hasBackupFields=!isArray&&('identities' in incoming||'archived' in incoming||'active' in incoming||'pending' in incoming);
+      const candidate={
+        chain:incoming.chain,
+        pending:hasBackupFields&&Array.isArray(incoming.pending)?incoming.pending:[],
+        identities:hasBackupFields&&incoming.identities&&typeof incoming.identities==='object'?incoming.identities:(old.identities||{}),
+        archived:hasBackupFields&&incoming.archived&&typeof incoming.archived==='object'?incoming.archived:(old.archived||{}),
+        active:hasBackupFields?incoming.active||null:old.active||null
+      };
+      state=candidate;
+      for(const id of Object.values({...state.identities,...state.archived})){if(id.publicKey&&!id.shortAddress)id.shortAddress=await address(id.publicKey)}
+      if(!state.active||!state.identities[state.active])state=({...state,active:Object.keys(state.identities)[0]||null});
+      const check=await verifyChain();
+      if(!check.ok)throw Error(check.error||'链完整性校验失败');
+      save(); render(); setStatus(true,'链完整性 ✓','已导入并验证 '+state.chain.length+' 个区块'); notice($('importStatus'),'导入成功：区块内容和哈希均保持原样。','success');
+    }catch(err){state=old; render(); setStatus(false,'导入失败',err.message||String(err)); notice($('importStatus'),'导入失败：'+(err.message||String(err))+'；未修改原链和区块哈希。','error')}
+    finally{e.target.value=''}
+  };
   boot();
 </script>
 </body>
