@@ -55,7 +55,7 @@
     const f=(frac+'0'.repeat(32)).slice(0,32); return BigInt(whole)*UNIT+BigInt(f||'0');
   }
   function unitsToString(units){const neg=units<0n;let n=neg?-units:units;const whole=n/UNIT,frac=(n%UNIT).toString().padStart(32,'0').replace(/0+$/,'');return (neg?'-':'')+whole.toString()+(frac?'.'+frac:'');}
-  function displayUnits(units){const exact=unitsToString(units);if(!exact.includes('.'))return exact+'.00';const [w,f]=exact.split('.');if(/^0+$/.test(w)&&/^0*1/.test(f)){const first=f.search(/[1-9]/);return '0.'+'0'.repeat(Math.min(first,7))+(first>=8?'…':'')+f[first];}return w+'.'+f.slice(0,8).padEnd(2,'0')+(f.length>8?'…':'');}
+  function displayUnits(units){const exact=unitsToString(units),[w,f='']=exact.split('.');return w+'.'+f.slice(0,8).padEnd(8,'0');}
   function message(tx){return canonical({type:tx.type,from:tx.from||null,to:tx.to||null,amount:tx.amount||0,nonce:tx.nonce,memo:tx.memo||''})}
   async function blockHash(block){return sha(canonical({index:block.index,prevHash:block.prevHash,timestamp:block.timestamp,transactions:block.transactions}))}
   async function makeGenesis(){const b={index:0,prevHash:ZERO,timestamp:0,transactions:[{type:'genesis',amount:0}]};return {...b,hash:await blockHash(b)}}
