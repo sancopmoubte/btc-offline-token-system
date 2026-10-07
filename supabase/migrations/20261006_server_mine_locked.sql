@@ -6,7 +6,7 @@ create extension if not exists pgcrypto;
 
 create or replace function public.mine_block_locked(
   p_to text,
-  p_transactions json
+  p_transactions_text text
 )
 returns jsonb
 language plpgsql
@@ -30,10 +30,10 @@ begin
   if p_to is null or p_to !~ '^pqc1[A-Za-z0-9_-]+$' then
     raise exception 'INVALID_RECIPIENT: invalid MMC address';
   end if;
-  if p_transactions is null or json_typeof(p_transactions) <> 'array' then
+  if p_transactions_text is null or json_typeof(p_transactions_text::json) <> 'array' then
     raise exception 'INVALID_TRANSACTIONS: expected JSON array';
   end if;
-  if exists (select 1 from json_array_elements(p_transactions) x where x->>'type' = 'coinbase') then
+  if exists (select 1 from json_array_elements(p_transactions_text::json) x where x->>'type' = 'coinbase') then
     raise exception 'INVALID_TRANSACTIONS: client cannot submit coinbase';
   end if;
 
@@ -59,10 +59,10 @@ begin
   coinbase_text := '{"type":"coinbase","to":' || to_json(p_to)::text
     || ',"amount":' || to_json(reward::float8)::text
     || ',"schedule":"halving-v1"}';
-  if p_transactions::text = '[]' then
+  if p_transactions_text = '[]' then
     transactions_text := '[' || coinbase_text || ']';
   else
-    transactions_text := rtrim(p_transactions::text, ']') || ',' || coinbase_text || ']';
+    transactions_text := rtrim(p_transactions_text, ']') || ',' || coinbase_text || ']';
   end if;
 
   core_text := '{"index":' || next_height::text
@@ -95,8 +95,9 @@ exception
 end;
 $$;
 
-revoke all on function public.mine_block_locked(text, json) from public;
-grant execute on function public.mine_block_locked(text, json) to anon, authenticated;
+revoke all on function public.mine_block_locked(text, text) from public;
+grant execute on function public.mine_block_locked(text, text) to anon, authenticated;
 
 -- 新版客户端只能通过服务端权威函数出块；历史数据不受影响。
+drop function if exists public.mine_block_locked(text, json);
 revoke insert on public.chain_blocks_raw from anon, authenticated;
