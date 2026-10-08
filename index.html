@@ -124,22 +124,23 @@
     }
     return rows;
   }
+  async function getSharedChainTip(){const reply=await supabaseClient.rpc('get_chain_tip');if(reply.error)throw reply.error;return reply.data?.ok?reply.data:null}
   async function loadSupabaseChain(){
     const hasLocal=!state.localBackupOverride&&Array.isArray(state.chain)&&state.chain.length>0;
     const readFull=async()=>{const rows=await fetchSupabaseRows();const full=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);if(!full.length)throw Error('共享节点返回空主链');return full};
     if(hasLocal){
-      const latest=await fetch(SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash&order=height.desc&limit=1',{headers:apiHeaders,cache:'no-store'});
-      if(!latest.ok)throw Error('Supabase 共享节点 HTTP '+latest.status);
-      const latestRows=await latest.json(),remoteHeight=latestRows.length?Number(latestRows[0].height):-1,localHeight=state.chain.length-1;
-      if(remoteHeight===localHeight&&latestRows[0].block_hash===state.chain.at(-1).hash){state.sharedSource='supabase:chain_blocks (本地缓存已是主链最新)';return true;}
+      const latestRow=await getSharedChainTip();
+      if(!latestRow)throw Error('Supabase 共享节点没有主链');
+      const remoteHeight=Number(latestRow.height),localHeight=state.chain.length-1;
+      if(remoteHeight===localHeight&&latestRow.block_hash===state.chain.at(-1).hash){state.sharedSource='supabase:chain_blocks (轻量尖端校验：本地缓存已是主链最新)';return true;}
       if(remoteHeight<0)throw Error('Supabase 共享节点没有主链');
       if(remoteHeight>localHeight){
         const rows=await fetchSupabaseRows('height=gt.'+localHeight),incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
-        if(incoming.length&&incoming[0].prevHash===state.chain.at(-1).hash){state.chain.push(...incoming);state.pending=[];state.sharedSource='supabase:chain_blocks (主链增量同步 '+incoming.length+' 个区块)';state.verifiedHeight=null;state.verifiedHash=null;return true;}
+        if(incoming.length&&incoming[0].prevHash===state.chain.at(-1).hash){state.chain.push(...incoming);state.pending=[];state.sharedSource='supabase:chain_blocks (轻量尖端 + 增量同步 '+incoming.length+' 个区块)';state.verifiedHeight=null;state.verifiedHash=null;return true;}
       }
     }
     if(typeof setStatus==='function')setStatus(false,'正在加载 Supabase 主链…','目标高度 57079；旧分叉已归档');
-    const full=await readFull();state.chain=full;state.pending=[];state.sharedSource='supabase:chain_blocks (主链 57079)';state.verifiedHeight=null;state.verifiedHash=null;return true;
+    const full=await readFull();state.chain=full;state.pending=[];state.sharedSource='supabase:chain_blocks (完整校验回退)';state.verifiedHeight=null;state.verifiedHash=null;return true;
   }
 
   function subscribeSupabase(){
