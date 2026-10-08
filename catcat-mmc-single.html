@@ -140,11 +140,11 @@
       if(remoteHeight<0)throw Error('Supabase 共享节点没有主链');
       if(remoteHeight>localHeight){
         const rows=await fetchSupabaseRows('height=gt.'+localHeight),incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
-        if(incoming.length&&incoming[0].prevHash===state.chain.at(-1).hash){state.chain.push(...incoming);reconcilePending();state.sharedSource='supabase:chain_blocks (轻量尖端 + 增量同步 '+incoming.length+' 个区块)';state.verifiedHeight=null;state.verifiedHash=null;return true;}
+        if(incoming.length&&incoming[0].prevHash===state.chain.at(-1).hash){const previous=state.chain;state.chain=[...previous,...incoming];try{await verifyChain();reconcilePending();state.sharedSource='supabase:chain_blocks (轻量尖端 + 增量同步 '+incoming.length+' 个区块)';const checked=state.chain.at(-1);state.verifiedHeight=checked.index;state.verifiedHash=checked.hash;return true}catch(e){state.chain=previous;throw Error('增量区块验证失败：'+e.message)}}
       }
     }
     if(typeof setStatus==='function')setStatus(false,'正在加载 Supabase 主链…','轻量尖端校验；哈希断裂时完整回退');
-    const full=await readFull();state.chain=full;reconcilePending();state.sharedSource='supabase:chain_blocks (完整校验回退)';state.verifiedHeight=null;state.verifiedHash=null;return true;
+    const previous=state.chain;const full=await readFull();state.chain=full;try{await verifyChain();reconcilePending();state.sharedSource='supabase:chain_blocks (完整校验回退)';const checked=state.chain.at(-1);state.verifiedHeight=checked.index;state.verifiedHash=checked.hash;return true}catch(e){state.chain=previous;throw Error('共享主链验证失败：'+e.message)}
   }
 
   function subscribeSupabase(){
