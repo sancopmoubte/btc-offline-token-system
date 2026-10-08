@@ -62,9 +62,13 @@
   async function makeGenesis(){const b={index:0,prevHash:ZERO,timestamp:0,transactions:[{type:'genesis',amount:0}]};return {...b,hash:await blockHash(b)}}
   function notice(el,text,kind=''){el.textContent=text;el.className='notice '+kind}
   function activeId(){return state.active&&state.identities[state.active]}
-  function openStateDb(){return new Promise((resolve,reject)=>{if(!('indexedDB' in window))return reject(Error('浏览器不支持 IndexedDB'));const req=indexedDB.open(DB_NAME,1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(DB_STORE))req.result.createObjectStore(DB_STORE)};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||Error('IndexedDB 打开失败'))})}
+  function openStateDb(){return new Promise((resolve,reject)=>{if(!('indexedDB' in window))return reject(Error('浏览器不支持 IndexedDB'));const req=indexedDB.open(DB_NAME,2);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(DB_STORE))req.result.createObjectStore(DB_STORE);if(!req.result.objectStoreNames.contains('fork_archives'))req.result.createObjectStore('fork_archives')};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error||Error('IndexedDB 打开失败'))})}
   async function readStateDb(){try{const db=await openStateDb();return await new Promise((resolve,reject)=>{const r=db.transaction(DB_STORE,'readonly').objectStore(DB_STORE).get('current');r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error)})}catch(e){console.warn('IndexedDB 读取失败',e);return null}}
   async function writeStateDb(value){const db=await openStateDb();return new Promise((resolve,reject)=>{const r=db.transaction(DB_STORE,'readwrite').objectStore(DB_STORE).put(value,'current');r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error||Error('IndexedDB 写入失败'))})}
+  async function archiveForkChain(chain){
+    if(!Array.isArray(chain)||!chain.length)return;
+    try{const db=await openStateDb();await new Promise((resolve,reject)=>{const r=db.transaction('fork_archives','readwrite').objectStore('fork_archives').put({createdAt:new Date().toISOString(),height:chain.length-1,tipHash:chain.at(-1).hash,chain},'fork-'+Date.now());r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error)})}catch(e){console.warn('分叉链归档失败',e)}
+  }
   function save(){
     const snapshot=state;
     try{localStorage.setItem(STORAGE,JSON.stringify(snapshot))}catch(e){if(e&&e.name!=='QuotaExceededError')console.warn('localStorage 保存失败',e)}
@@ -107,21 +111,23 @@
   }
   async function loadSupabaseChain(){
     const hasLocal=!state.localBackupOverride&&Array.isArray(state.chain)&&state.chain.length>0;
+    const readFull=async()=>{const rows=await fetchSupabaseRows();const full=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);if(!full.length)throw Error('共享节点返回空主链');return full};
     if(hasLocal){
       const latest=await fetch(SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash&order=height.desc&limit=1',{headers:apiHeaders,cache:'no-store'});
       if(!latest.ok)throw Error('Supabase 共享节点 HTTP '+latest.status);
-      const latestRows=await latest.json(); const remoteHeight=latestRows.length?Number(latestRows[0].height):-1; const localHeight=state.chain.length-1;
-      if(remoteHeight===localHeight){if(latestRows[0].block_hash!==state.chain.at(-1).hash)throw Error('共享节点出现分叉：最新区块哈希不匹配');state.sharedSource='supabase:chain_blocks (本地缓存已是最新)';return true;}
+      const latestRows=await latest.json(),remoteHeight=latestRows.length?Number(latestRows[0].height):-1,localHeight=state.chain.length-1;
+      if(remoteHeight===localHeight&&latestRows[0].block_hash===state.chain.at(-1).hash){state.sharedSource='supabase:chain_blocks (本地缓存已是主链最新)';return true;}
+      if(remoteHeight<0)throw Error('Supabase 共享节点没有主链');
       if(remoteHeight>localHeight){
-        const rows=await fetchSupabaseRows('height=gt.'+localHeight); const incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
-        if(incoming.length){if(incoming[0].prevHash!==state.chain.at(-1).hash)throw Error('共享节点出现分叉：新增区块前哈希不匹配');state.chain.push(...incoming);state.pending=[];state.sharedSource='supabase:chain_blocks (增量同步 '+incoming.length+' 个区块)';state.verifiedHeight=null;state.verifiedHash=null;return true;}
-        return true;
+        const rows=await fetchSupabaseRows('height=gt.'+localHeight),incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
+        if(incoming.length&&incoming[0].prevHash===state.chain.at(-1).hash){state.chain.push(...incoming);state.pending=[];state.sharedSource='supabase:chain_blocks (主链增量同步 '+incoming.length+' 个区块)';state.verifiedHeight=null;state.verifiedHash=null;return true;}
       }
-      // 远端高度回退时，重新读取远端完整链；不修改任何区块，只选择当前共享节点版本。
+      await archiveForkChain(state.chain);
     }
-    const rows=await fetchSupabaseRows(); const incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
-    if(incoming.length){state.chain=incoming;state.pending=[];state.sharedSource='supabase:chain_blocks (首次完整同步)';state.verifiedHeight=null;state.verifiedHash=null;return true} return false;
+    if(typeof setStatus==='function')setStatus(false,'正在加载 Supabase 主链…','目标高度 57079；旧分叉已归档');
+    const full=await readFull();state.chain=full;state.pending=[];state.sharedSource='supabase:chain_blocks (主链 57079)';state.verifiedHeight=null;state.verifiedHash=null;return true;
   }
+
   function subscribeSupabase(){
     supabaseClient.channel('shared-chain-sync').on('postgres_changes',{event:'INSERT',schema:'public',table:'chain_blocks_raw'},async()=>{
       try{
