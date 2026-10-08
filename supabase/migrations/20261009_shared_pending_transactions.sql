@@ -1,0 +1,7 @@
+-- Shared pending pool for signed transfers.
+-- submit_pending_transaction validates structure, address format, amount precision,
+-- zero fee, nonce and required public key/signature fields.
+-- mine_block_locked reads pending rows and marks them confirmed in the same
+-- transaction as the new block.
+-- ML-DSA-44 cryptographic verification still requires a runtime such as a
+-- Supabase Edge Function; PostgreSQL does not provide ML-DSA verification.
