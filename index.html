@@ -101,11 +101,17 @@
   async function fetchSupabaseRows(extra='',descending=false){
     const order=descending?'height.desc':'height.asc';
     const base=SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text'+(extra?'&'+extra:'')+'&order='+order;
-    const pageSize=1000, concurrency=6;
+    const pageSize=1000, concurrency=2;
     async function readPage(start){
-      const page=await fetch(base,{headers:{...apiHeaders,Range:start+'-'+(start+pageSize-1),Prefer:'count=exact'},cache:'no-store'});
-      if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);
-      return {rows:await page.json(),range:page.headers.get('content-range')||''};
+      let lastError;
+      for(let attempt=0;attempt<3;attempt++){
+        try{
+          const page=await fetch(base,{headers:{...apiHeaders,Range:start+'-'+(start+pageSize-1),Prefer:'count=exact'},cache:'no-store'});
+          if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);
+          return {rows:await page.json(),range:page.headers.get('content-range')||''};
+        }catch(e){lastError=e;if(attempt<2)await new Promise(r=>setTimeout(r,350*(attempt+1)))}
+      }
+      throw lastError||Error('Supabase 分页读取失败');
     }
     const first=await readPage(0), rows=[...first.rows];
     const match=first.range.match(/\/(\d+)$/); const total=match?Number(match[1]):null;
