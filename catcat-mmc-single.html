@@ -34,8 +34,8 @@
 </div>
 <script type="module">
   const STORAGE='pqc_solo_chain_v1'; const SHARED_CHAIN_URL='https://raw.githubusercontent.com/sancopmoubte/btc-offline-token-system/main/chain.json';
-  const TRANSFER_FUNCTION_URL='https://iohehvhbzmagvhlohloj.supabase.co/functions/v1/verify-and-submit-transfer';
-  const SUPABASE_URL='https://iohehvhbzmagvhlohloj.supabase.co'; const SUPABASE_ANON_KEY='sb_publishable_YwLdV_y3x-mqGWBOYSkW2g_dhlThVQ-'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
+  const TRANSFER_FUNCTION_URL='https://bnmzgivkpnscknerphao.supabase.co/functions/v1/verify-and-submit-transfer';
+  const SUPABASE_URL='https://bnmzgivkpnscknerphao.supabase.co'; const SUPABASE_ANON_KEY='sb_publishable_pKeZYSs6V9szuQWPEvd_LA_7YDI_T6e'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
   const DECIMAL_PLACES=8n; const UNIT=10n**DECIMAL_PLACES; const ZERO='0'.repeat(64); const GENESIS_HASH='3d8d22899a36c78da2aa082360f36ba770db9d312dd1a5c49687fec6287a39ee'; const enc=new TextEncoder();
   let pqc, supabaseClient, state={chain:[],pending:[],identities:{},archived:{},active:null};
   let miningStatus={ready:false,remainingMs:28800000,nextAvailableAt:0};
