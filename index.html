@@ -83,6 +83,7 @@
     if(!state.chain.length)return {ok:false,error:'缺少创世块'};
     const seen=new Set(); const balances={}; let minedBefore=0;
     for(let i=0;i<state.chain.length;i++){
+      if(i>0&&i%100===0)await new Promise(r=>requestAnimationFrame?r:requestAnimationFrame(r));
       const b=state.chain[i]; if(b.index!==i)throw Error('区块高度错误'); if(i===0&&b.prevHash!==ZERO)throw Error('创世块错误'); if(i&&b.prevHash!==state.chain[i-1].hash)throw Error('区块 '+i+' 前哈希断裂');
       if(await blockHash(b)!==b.hash)throw Error('区块 '+i+' 哈希被篡改');
       const minerTx=b.transactions.find(t=>t.type==='coinbase'); const miner=minerTx&&resolveAddress(minerTx.to);
