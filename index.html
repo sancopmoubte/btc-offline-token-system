@@ -130,28 +130,9 @@
       }catch(e){console.warn('共享链实时同步失败',e)}
     }).subscribe();
   }
-  async function importWithFallback(urls,label){
-    let last;
-    for(const url of urls){
-      try{
-        const mod=await Promise.race([import(url),new Promise((_,reject)=>setTimeout(()=>reject(Error(label+'加载超时')),12000))]);
-        return mod;
-      }catch(e){last=e; console.warn(label+'加载失败',url,e)}
-    }
-    throw Error(label+'无法加载，请检查网络后刷新（'+(last?.message||'未知错误')+'）');
-  }
   async function boot(){
-    try{
-      const noble=await importWithFallback([
-        'https://cdn.jsdelivr.net/npm/@noble/post-quantum@0.7.1/ml-dsa.js/+esm',
-        'https://unpkg.com/@noble/post-quantum@0.7.1/ml-dsa.js?module',
-        'https://esm.sh/@noble/post-quantum@0.7.1/ml-dsa.js'
-      ],'抗量子库'); pqc={ml_dsa44:noble.ml_dsa44};
-      const sb=await importWithFallback([
-        'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm',
-        'https://esm.sh/@supabase/supabase-js@2',
-        'https://unpkg.com/@supabase/supabase-js@2/+esm'
-      ],'Supabase 客户端'); supabaseClient=sb.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+    try{const noble=await import('https://cdn.jsdelivr.net/npm/@noble/post-quantum@0.7.1/ml-dsa.js/+esm'); pqc={ml_dsa44:noble.ml_dsa44};
+      const sb=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'); supabaseClient=sb.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
       const local=await loadPersistedState(); if(local)state=local; state.archived=state.archived||{};
       let loaded=false;
       if(state.localBackupOverride&&Array.isArray(state.chain)&&state.chain.length){
