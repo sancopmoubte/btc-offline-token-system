@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.49.8",
+    "@noble/post-quantum/ml-dsa.js": "npm:@noble/post-quantum@0.7.1/ml-dsa.js"
+  }
+}
