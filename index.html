@@ -96,12 +96,23 @@
   }
   const apiHeaders={apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY};
   async function fetchSupabaseRows(extra='',descending=false){
-    const rows=[]; const order=descending?'height.desc':'height.asc';
+    const rows=[]; const order=descending?'height.desc':'height.asc'; let total=null;
     for(let start=0;;start+=1000){
       const url=SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text'+(extra?'&'+extra:'')+'&order='+order;
-      const page=await fetch(url,{headers:{...apiHeaders,Range:start+'-'+(start+999)},cache:'no-store'});
-      if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);
-      const part=await page.json(); rows.push(...part); if(part.length<1000)break;
+      let page,lastError;
+      for(let attempt=0;attempt<3;attempt++){
+        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+        try{
+          page=await fetch(url,{headers:{...apiHeaders,Range:start+'-'+(start+999),Prefer:'count=exact'},cache:'no-store',signal:controller.signal});
+          if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);
+          break;
+        }catch(e){lastError=e;if(attempt<2)await new Promise(r=>setTimeout(r,800*(attempt+1)))}finally{clearTimeout(timer)}
+      }
+      if(!page)throw Error('Supabase 共享节点连接失败：'+(lastError?.name==='AbortError'?'请求超时':(lastError?.message||'请检查网络')));
+      const range=page.headers.get('content-range')||'',match=range.match(/\/(\d+)$/); if(match)total=Number(match[1]);
+      const part=await page.json(); rows.push(...part);
+      if(typeof setStatus==='function')setStatus(false,'正在同步共享节点…',`${rows.length}${total!==null?' / '+total:''} 个区块`);
+      if(part.length<1000)break;
     }
     return rows;
   }
@@ -119,6 +130,7 @@
       }
       // 远端高度回退时，重新读取远端完整链；不修改任何区块，只选择当前共享节点版本。
     }
+    if(typeof setStatus==='function')setStatus(false,'正在连接 Supabase 共享节点…','首次打开将顺序加载全部区块');
     const rows=await fetchSupabaseRows(); const incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
     if(incoming.length){state.chain=incoming;state.pending=[];state.sharedSource='supabase:chain_blocks (首次完整同步)';state.verifiedHeight=null;state.verifiedHash=null;return true} return false;
   }
