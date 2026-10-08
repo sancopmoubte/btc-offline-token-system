@@ -96,23 +96,12 @@
   }
   const apiHeaders={apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY};
   async function fetchSupabaseRows(extra='',descending=false){
-    const rows=[]; const order=descending?'height.desc':'height.asc'; let total=null;
+    const rows=[]; const order=descending?'height.desc':'height.asc';
     for(let start=0;;start+=1000){
       const url=SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text'+(extra?'&'+extra:'')+'&order='+order;
-      let page,lastError;
-      for(let attempt=0;attempt<3;attempt++){
-        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
-        try{
-          page=await fetch(url,{headers:{...apiHeaders,Range:start+'-'+(start+999),Prefer:'count=exact'},cache:'no-store',signal:controller.signal});
-          if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);
-          break;
-        }catch(e){lastError=e;if(attempt<2)await new Promise(r=>setTimeout(r,800*(attempt+1)))}finally{clearTimeout(timer)}
-      }
-      if(!page)throw Error('Supabase 共享节点连接失败：'+(lastError?.name==='AbortError'?'请求超时':(lastError?.message||'请检查网络')));
-      const range=page.headers.get('content-range')||'',match=range.match(/\/(\d+)$/); if(match)total=Number(match[1]);
-      const part=await page.json(); rows.push(...part);
-      if(typeof setStatus==='function')setStatus(false,'正在同步共享节点…',`${rows.length}${total!==null?' / '+total:''} 个区块`);
-      if(part.length<1000)break;
+      const page=await fetch(url,{headers:{...apiHeaders,Range:start+'-'+(start+999)},cache:'no-store'});
+      if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);
+      const part=await page.json(); rows.push(...part); if(part.length<1000)break;
     }
     return rows;
   }
@@ -125,20 +114,10 @@
       if(remoteHeight===localHeight){if(latestRows[0].block_hash!==state.chain.at(-1).hash)throw Error('共享节点出现分叉：最新区块哈希不匹配');state.sharedSource='supabase:chain_blocks_raw (本地缓存已是最新)';return true;}
       if(remoteHeight>localHeight){
         const rows=await fetchSupabaseRows('height=gt.'+localHeight); const incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
-        if(incoming.length){
-          if(incoming[0].prevHash!==state.chain.at(-1).hash){
-            if(typeof setStatus==='function')setStatus(false,'检测到旧本地链，正在重新加载共享链…','不修改任何区块哈希');
-            const fullRows=await fetchSupabaseRows();
-            const full=fullRows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
-            if(!full.length)throw Error('共享节点返回空链');
-            state.chain=full;state.pending=[];state.sharedSource='supabase:chain_blocks_raw (旧缓存已替换为完整共享链)';state.verifiedHeight=null;state.verifiedHash=null;return true;
-          }
-          state.chain.push(...incoming);state.pending=[];state.sharedSource='supabase:chain_blocks_raw (增量同步 '+incoming.length+' 个区块)';state.verifiedHeight=null;state.verifiedHash=null;return true;
-        }
+        if(incoming.length){if(incoming[0].prevHash!==state.chain.at(-1).hash)throw Error('共享节点出现分叉：新增区块前哈希不匹配');state.chain.push(...incoming);state.pending=[];state.sharedSource='supabase:chain_blocks_raw (增量同步 '+incoming.length+' 个区块)';state.verifiedHeight=null;state.verifiedHash=null;return true;}
         return true;
       }
     }
-    if(typeof setStatus==='function')setStatus(false,'正在连接 Supabase 共享节点…','首次打开将顺序加载全部区块');
     const rows=await fetchSupabaseRows(); const incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
     if(incoming.length){state.chain=incoming;state.pending=[];state.sharedSource='supabase:chain_blocks_raw (首次完整同步)';state.verifiedHeight=null;state.verifiedHash=null;return true} return false;
   }
