@@ -1,0 +1,4 @@
+-- Safety gate: shared pending transactions are not included in blocks until
+-- an Edge Function performs real ML-DSA-44 verification.
+-- The active mine RPC continues to use locally signed transactions submitted
+-- by the existing frontend path. The shared table remains reserved.
