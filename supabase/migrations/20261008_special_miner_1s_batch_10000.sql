@@ -24,7 +24,6 @@ declare
   core_text text;
   block_hash text;
   full_text text;
-  result_blocks jsonb := '[]'::jsonb;
 begin
   perform pg_advisory_xact_lock(hashtextextended('catcat-mmc-chain-v1', 0));
   if p_to is null or p_to !~ '^pqc1[A-Za-z0-9_-]+$' then raise exception 'INVALID_RECIPIENT: invalid MMC address'; end if;
@@ -45,10 +44,9 @@ begin
     block_hash := encode(extensions.digest(convert_to(core_text, 'UTF8'), 'sha256'), 'hex');
     full_text := left(core_text, length(core_text) - 1) || ',"hash":' || to_json(block_hash)::text || '}';
     insert into public.chain_blocks_raw (height, block_hash, prev_hash, block_text, block) values (next_height, block_hash, tip.block_hash, full_text, full_text::jsonb);
-    result_blocks := result_blocks || jsonb_build_array(jsonb_build_object('height', next_height, 'block_hash', block_hash, 'prev_hash', tip.block_hash, 'block_text', full_text));
     tip.height := next_height; tip.block_hash := block_hash; next_height := next_height + 1;
   end loop;
-  return jsonb_build_object('ok', true, 'batch_count', batch_count, 'height', next_height - 1, 'block_hash', tip.block_hash, 'blocks', result_blocks);
+  return jsonb_build_object('ok', true, 'batch_count', batch_count, 'height', next_height - 1, 'block_hash', tip.block_hash);
 exception when unique_violation then raise exception 'CHAIN_CONFLICT: another miner already appended this height';
 end;
 $$;
