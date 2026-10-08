@@ -92,17 +92,32 @@
         const from=resolveAddress(tx.from),to=resolveAddress(tx.to); const txUnits=toUnits(tx.amount); const feeUnits=tx.fee===undefined?0n:toUnits(tx.fee); if(tx.fee!==undefined&&feeUnits!==feeFor(txUnits))throw Error('手续费金额错误'); const totalUnits=txUnits+feeUnits; if((balances[from]||0n)<totalUnits)throw Error('链上余额不足（含 0.1% 服务费）'); balances[from]-=totalUnits; balances[to]=(balances[to]||0n)+txUnits; if(feeUnits){if(!miner)throw Error('手续费缺少矿工');balances[miner]=(balances[miner]||0n)+feeUnits} seen.add(tx.nonce);
       }
     }
-    const supply=supplyOf(); if(supply>MAX_SUPPLY)throw Error('总发行量超过 21,000,000'); return {ok:true,balances,supply};
+    const supply=supplyOf(); if(supply>MAX_SUPPLY)throw Error('总发行量超过 21,000,000');
+    state.syncMeta=state.syncMeta||{}; state.syncMeta.checkpoints=state.syncMeta.checkpoints||{};
+    if(state.chain.length){for(let i=0;i<state.chain.length;i+=1000){const b=state.chain[i];state.syncMeta.checkpoints[i]={hash:b.hash,index:b.index}} const tip=state.chain.at(-1);state.syncMeta.checkpoints[tip.index]={hash:tip.hash,index:tip.index};state.syncMeta.checkpointVersion=1}
+    return {ok:true,balances,supply};
   }
   const apiHeaders={apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY};
   async function fetchSupabaseRows(extra='',descending=false){
-    const rows=[]; const order=descending?'height.desc':'height.asc';
-    for(let start=0;;start+=1000){
-      const url=SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text'+(extra?'&'+extra:'')+'&order='+order;
-      const page=await fetch(url,{headers:{...apiHeaders,Range:start+'-'+(start+999)},cache:'no-store'});
+    const order=descending?'height.desc':'height.asc';
+    const base=SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text'+(extra?'&'+extra:'')+'&order='+order;
+    const pageSize=1000, concurrency=6;
+    async function readPage(start){
+      const page=await fetch(base,{headers:{...apiHeaders,Range:start+'-'+(start+pageSize-1),Prefer:'count=exact'},cache:'no-store'});
       if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);
-      const part=await page.json(); rows.push(...part); if(part.length<1000)break;
+      return {rows:await page.json(),range:page.headers.get('content-range')||''};
     }
+    const first=await readPage(0), rows=[...first.rows];
+    const match=first.range.match(/\/(\d+)$/); const total=match?Number(match[1]):null;
+    if(total!==null){
+      const starts=[]; for(let start=pageSize;start<total;start+=pageSize)starts.push(start);
+      for(let i=0;i<starts.length;i+=concurrency){
+        const pages=await Promise.all(starts.slice(i,i+concurrency).map(readPage));
+        for(const page of pages)rows.push(...page.rows);
+      }
+      return rows;
+    }
+    for(let start=pageSize;;start+=pageSize){const page=await readPage(start);rows.push(...page.rows);if(page.rows.length<pageSize)break}
     return rows;
   }
   async function loadSupabaseChain(){
