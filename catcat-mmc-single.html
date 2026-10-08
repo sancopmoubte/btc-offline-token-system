@@ -100,12 +100,28 @@
   }
   const apiHeaders={apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY};
   async function fetchSupabaseRows(extra='',descending=false){
-    const rows=[]; const order=descending?'height.desc':'height.asc';
-    for(let start=0;;start+=1000){
-      const url=SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text'+(extra?'&'+extra:'')+'&order='+order;
-      const page=await fetch(url,{headers:{...apiHeaders,Range:start+'-'+(start+999)},cache:'no-store'});
-      if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);
-      const part=await page.json(); rows.push(...part); if(part.length<1000)break;
+    const order=descending?'height.desc':'height.asc';
+    const base=SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text'+(extra?'&'+extra:'')+'&order='+order;
+    const size=1000, concurrency=4, rows=[];
+    async function readPage(start){
+      let lastError;
+      for(let attempt=0;attempt<3;attempt++){
+        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+        try{const page=await fetch(base,{headers:{...apiHeaders,Range:start+'-'+(start+size-1),Prefer:'count=exact'},cache:'no-store',signal:controller.signal});if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);const data=await page.json();return {start,data,total:page.headers.get('content-range')||''};}
+        catch(e){lastError=e;if(attempt<2)await new Promise(r=>setTimeout(r,700*(attempt+1)))}finally{clearTimeout(timer)}
+      }
+      throw lastError||Error('Supabase 分页读取失败');
+    }
+    const first=await readPage(0); rows.push(...first.data);
+    const match=first.total.match(/\/(\d+)$/),total=match?Number(match[1]):null;
+    if(typeof setStatus==='function')setStatus(false,'正在同步共享节点…',`${rows.length}${total!==null?' / '+total:''} 个区块`);
+    if(first.data.length<size)return rows;
+    const starts=[]; if(total!==null){for(let start=size;start<total;start+=size)starts.push(start)}else{for(let start=size;;start+=size)starts.push(start)}
+    for(let i=0;i<starts.length;i+=concurrency){
+      const batch=await Promise.all(starts.slice(i,i+concurrency).map(readPage));
+      batch.sort((a,b)=>a.start-b.start); for(const page of batch)rows.push(...page.data);
+      if(typeof setStatus==='function')setStatus(false,'正在同步共享节点…',`${Math.min(rows.length,total??rows.length)}${total!==null?' / '+total:''} 个区块`);
+      if(total===null&&batch.some(x=>x.data.length<size))break;
     }
     return rows;
   }
