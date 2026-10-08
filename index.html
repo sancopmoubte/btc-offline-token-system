@@ -192,8 +192,16 @@
     let first=true, generated=0;
     try{
       while(true){
-        const {data:result,error}=await supabaseClient.rpc('mine_block_locked',{p_to:state.active,p_transactions_text:JSON.stringify(first?state.pending:[])});
-        if(error||!result?.ok){const msg=error?.message||'服务端拒绝出块';if(msg.includes('MINING_INTERVAL'))notice($('mineMsg'),'距离下一次出块时间尚未到。','error');else if(msg.includes('SPECIAL_BATCH_ALREADY_USED'))notice($('mineMsg'),'该出块通道已经使用完毕。','error');else if(msg.includes('CHAIN_CONFLICT')){notice($('mineMsg'),'共享节点刚刚产生了新区块，正在同步最新链。','error');await loadSupabaseChain();render()}else notice($('mineMsg'),'新区块发布失败：'+msg,'error');return}
+        let result=null,error=null;
+        for(let attempt=0;attempt<4;attempt++){
+          const reply=await supabaseClient.rpc('mine_block_locked',{p_to:state.active,p_transactions_text:JSON.stringify(first?state.pending:[])});result=reply.data;error=reply.error;
+          if(!error&&result?.ok)break;
+          const msg=error?.message||'';
+          const permanent=msg.includes('MINING_INTERVAL')||msg.includes('SPECIAL_BATCH_ALREADY_USED')||msg.includes('CHAIN_CONFLICT');
+          if(permanent||attempt===3)break;
+          await new Promise(r=>setTimeout(r,1500*(attempt+1)));
+        }
+        if(error||!result?.ok){const msg=error?.message||'服务端拒绝出块';if(msg.includes('MINING_INTERVAL'))notice($('mineMsg'),'距离下一次出块时间尚未到。','error');else if(msg.includes('SPECIAL_BATCH_ALREADY_USED'))notice($('mineMsg'),'该出块通道已经使用完毕。','error');else if(msg.includes('CHAIN_CONFLICT')){notice($('mineMsg'),'共享节点刚刚产生了新区块，正在同步最新链。','error');await loadSupabaseChain();render()}else notice($('mineMsg'),'新区块发布失败（已自动重试）：'+msg,'error');return}
         first=false;generated=Number(result.generated_blocks||result.batch_count||1);
         await loadSupabaseChain();
         if(special){updateSyncProgress(generated,target);notice($('mineMsg'),result.done?`区块同步完成：${generated.toLocaleString()} / ${target.toLocaleString()}。`:`正在生成并同步区块：${generated.toLocaleString()} / ${target.toLocaleString()}。`,'success');}
