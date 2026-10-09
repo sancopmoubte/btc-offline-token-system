@@ -1,0 +1,138 @@
+name: OCI A1 capacity watcher
+
+on:
+  # GitHub scheduled workflows are best-effort; 5 minutes is the shortest interval.
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      auto_create:
+        description: "发现容量后自动创建 1 OCPU / 1 GB A1 实例"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oci-a1-capacity-watcher
+  cancel-in-progress: false
+
+env:
+  OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+  OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+  OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  OCI_INSTANCE_NAME: ${{ vars.OCI_INSTANCE_NAME || 'mmc-node' }}
+  OCI_AUTO_CREATE: ${{ github.event_name == 'workflow_dispatch' && inputs.auto_create || vars.OCI_AUTO_CREATE || 'false' }}
+
+jobs:
+  watch-and-create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install OCI CLI
+        run: python3 -m pip install --user oci-cli
+
+      - name: Prepare OCI credentials
+        shell: bash
+        env:
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_SSH_PUBLIC_KEY: ${{ secrets.OCI_SSH_PUBLIC_KEY }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$OCI_CLI_USER"
+          test -n "$OCI_CLI_TENANCY"
+          test -n "$OCI_CLI_FINGERPRINT"
+          test -n "$OCI_CLI_REGION"
+          test -n "$OCI_COMPARTMENT_ID"
+          test -n "$OCI_PRIVATE_KEY"
+          test -n "$OCI_SSH_PUBLIC_KEY"
+          mkdir -p "$HOME/.oci"
+          umask 077
+          printf '%s\n' "$OCI_PRIVATE_KEY" > "$HOME/.oci/oci_api_key.pem"
+          printf '%s\n' "$OCI_SSH_PUBLIC_KEY" > "$RUNNER_TEMP/mmc-node.pub"
+          cat > "$HOME/.oci/config" <<EOF
+          [DEFAULT]
+          user=$OCI_CLI_USER
+          fingerprint=$OCI_CLI_FINGERPRINT
+          tenancy=$OCI_CLI_TENANCY
+          region=$OCI_CLI_REGION
+          key_file=$HOME/.oci/oci_api_key.pem
+          EOF
+          chmod 600 "$HOME/.oci/config" "$HOME/.oci/oci_api_key.pem"
+
+      - name: Check OCI API access
+        run: |
+          set -Eeuo pipefail
+          "$HOME/.local/bin/oci" iam region-subscription list --all >/dev/null
+
+      - name: Try A1 capacity in configured availability domains
+        shell: bash
+        env:
+          OCI_AVAILABILITY_DOMAINS: ${{ secrets.OCI_AVAILABILITY_DOMAINS }}
+          OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_OCID }}
+          OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_OCID }}
+        run: |
+          set -Eeuo pipefail
+          OCI="$HOME/.local/bin/oci"
+          test -n "$OCI_AVAILABILITY_DOMAINS"
+          test -n "$OCI_SUBNET_ID"
+          test -n "$OCI_IMAGE_ID"
+          mkdir -p "$RUNNER_TEMP/oci-state"
+          result_file="$RUNNER_TEMP/oci-state/result.json"
+
+          # Stop if a previous successful run already created the named node.
+          existing="$($OCI compute instance list --compartment-id "$OCI_COMPARTMENT_ID" --all \
+            --query "data[?\"display-name\"=='$OCI_INSTANCE_NAME']" --raw-output)"
+          if [[ "$existing" != "[]" ]]; then
+            echo "已有实例 $OCI_INSTANCE_NAME，停止重复创建。"
+            exit 0
+          fi
+
+          echo "模式：OCI_AUTO_CREATE=$OCI_AUTO_CREATE"
+          while IFS= read -r ad; do
+            [[ -z "$ad" ]] && continue
+            echo "测试 availability domain: $ad"
+            if [[ "$OCI_AUTO_CREATE" != "true" ]]; then
+              echo "只监控，不创建；A1 目标规格为 1 OCPU / 1 GB。"
+              continue
+            fi
+
+            set +e
+            "$OCI" compute instance launch \
+              --compartment-id "$OCI_COMPARTMENT_ID" \
+              --availability-domain "$ad" \
+              --subnet-id "$OCI_SUBNET_ID" \
+              --assign-public-ip true \
+              --display-name "$OCI_INSTANCE_NAME" \
+              --shape VM.Standard.A1.Flex \
+              --shape-config '{"ocpus":1,"memoryInGBs":1}' \
+              --image-id "$OCI_IMAGE_ID" \
+              --ssh-authorized-keys-file "$RUNNER_TEMP/mmc-node.pub" \
+              --wait-for-state RUNNING \
+              --max-wait-seconds 300 >"$result_file" 2>&1
+            rc=$?
+            set -e
+
+            cat "$result_file"
+            if [[ "$rc" -eq 0 ]]; then
+              echo "创建成功，停止后续 AD 尝试。"
+              exit 0
+            fi
+            if grep -Eqi 'out of host capacity|capacity|limit' "$result_file"; then
+              echo "该 AD 暂无容量或配额不足，尝试下一个。"
+            else
+              echo "该 AD 返回非容量错误，继续记录并尝试下一个。"
+            fi
+          done <<< "$OCI_AVAILABILITY_DOMAINS"
+
+          if [[ "$OCI_AUTO_CREATE" == "true" ]]; then
+            echo "所有已配置 AD 均未创建成功。"
+            exit 1
+          fi
