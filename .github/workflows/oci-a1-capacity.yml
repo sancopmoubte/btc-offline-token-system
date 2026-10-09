@@ -20,11 +20,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-  OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-  OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-  OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  OCI_CLI_USER: ocid1.user.oc1..aaaaaaaav3hgi3z7j3hfkusvnt6faayultzaj4kvt5ejrstwnihng4xlm4ja
+  OCI_CLI_TENANCY: ocid1.tenancy.oc1..aaaaaaaas57vden6dd5vs3ebqs5gliy7kyxtu6lke5aefvb6bz3azscmxbna
+  OCI_CLI_FINGERPRINT: 25:78:09:c6:41:2d:41:cc:13:5d:eb:d0:df:0c:23:94
+  OCI_CLI_REGION: mx-queretaro-1
+  OCI_COMPARTMENT_ID: ocid1.tenancy.oc1..aaaaaaaas57vden6dd5vs3ebqs5gliy7kyxtu6lke5aefvb6bz3azscmxbna
   OCI_INSTANCE_NAME: ${{ vars.OCI_INSTANCE_NAME || 'mmc-node' }}
   OCI_AUTO_CREATE: ${{ github.event_name == 'workflow_dispatch' && inputs.auto_create || vars.OCI_AUTO_CREATE || 'false' }}
 
@@ -75,9 +75,9 @@ jobs:
       - name: Try A1 capacity in configured availability domains
         shell: bash
         env:
-          OCI_AVAILABILITY_DOMAINS: ${{ secrets.OCI_AVAILABILITY_DOMAINS }}
-          OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_OCID }}
-          OCI_IMAGE_ID: ${{ secrets.OCI_IMAGE_OCID }}
+          OCI_AVAILABILITY_DOMAINS: noAO:MX-QUERETARO-1-AD-1
+          OCI_SUBNET_ID: ocid1.subnet.oc1.mx-queretaro-1.aaaaaaaatkil2jdgxa3vj2j4bywmz6pijysfu2zoxqf32voa5m64y37xhghq
+          OCI_IMAGE_ID: ocid1.image.oc1.mx-queretaro-1.aaaaaaaaqdwijlznq63yb5eg6miicpcg4nq4dsewfnlilldpqgersid2lmfa
         run: |
           set -Eeuo pipefail
           OCI="$HOME/.local/bin/oci"
