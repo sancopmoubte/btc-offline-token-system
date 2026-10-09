@@ -26,7 +26,7 @@ env:
   OCI_CLI_REGION: mx-queretaro-1
   OCI_COMPARTMENT_ID: ocid1.tenancy.oc1..aaaaaaaas57vden6dd5vs3ebqs5gliy7kyxtu6lke5aefvb6bz3azscmxbna
   OCI_INSTANCE_NAME: ${{ vars.OCI_INSTANCE_NAME || 'mmc-node' }}
-  OCI_AUTO_CREATE: ${{ github.event_name == 'workflow_dispatch' && inputs.auto_create || vars.OCI_AUTO_CREATE || 'false' }}
+  OCI_AUTO_CREATE: ${{ github.event_name == 'workflow_dispatch' && inputs.auto_create || vars.OCI_AUTO_CREATE || 'true' }}
 
 jobs:
   watch-and-create:
