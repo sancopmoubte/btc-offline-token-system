@@ -1,7 +1,8 @@
 -- MMC final consensus override: one miner, 10-minute blocks.
 -- Existing blocks and hashes are preserved. This migration only changes future mining.
 -- The frontend may call mine_block_locked directly; miner registration/challenge is not required
--- while the project is operating with one trusted miner.
+-- while the project is operating with one trusted miner. Any valid address may call the RPC;
+-- there is no address whitelist, so additional miners can join later without another migration.
 
 CREATE TABLE IF NOT EXISTS public.mmc_mining_schedule (
   id integer PRIMARY KEY,
