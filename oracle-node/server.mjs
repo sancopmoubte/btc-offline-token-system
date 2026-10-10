@@ -48,7 +48,7 @@ function fail(message, status = 400) { const e = new Error(message); e.status = 
 function sha256Hex(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function b64(value, field) { if (typeof value !== 'string' || !value) fail(`${field} is required`); try { return Buffer.from(value, 'base64'); } catch { fail(`${field} is not valid base64`); } }
 function amountUnits(value) { if (typeof value !== 'string' || !/^\d+(?:\.\d{1,8})?$/.test(value) || Number(value) <= 0) fail('Invalid amount'); const parts=value.split('.'), decimals=parts[1]?.length||0, digits=parts.join(''); return BigInt(digits.padEnd(digits.length + 8 - decimals, '0')); }
-function addressFromPublicKey(publicKey) { return `pqc1${crypto.createHash('sha256').update(publicKey).digest('hex').slice(0, 40)}`; }
+function addressFromPublicKey(publicKey) { return `pqc1${crypto.createHash('sha256').update(publicKey.toString('base64')).digest('hex').slice(0, 40)}`; }
 function txMessage(tx) { return { type: tx.type, from: tx.from ?? null, to: tx.to ?? null, amount: tx.amount ?? 0, nonce: tx.nonce, memo: tx.memo ?? '', ...(tx.fee !== undefined ? { fee: tx.fee } : {}) }; }
 function validateTx(tx) {
   if (!tx || typeof tx !== 'object' || tx.type !== 'transfer') fail('Only transfer transactions are accepted');
