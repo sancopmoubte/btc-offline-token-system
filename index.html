@@ -58,7 +58,7 @@
     const [whole,frac='']=raw.split('.'); if(frac.length>8)throw Error('金额最多支持 8 位小数');
     const f=(frac+'0'.repeat(8)).slice(0,8); return BigInt(whole)*UNIT+BigInt(f||'0');
   }
-  function unitsToString(units){const neg=units<0n;let n=neg?-units:units;const whole=n/UNIT,frac=(n%UNIT).toString().padStart(32,'0').replace(/0+$/,'');return (neg?'-':'')+whole.toString()+(frac?'.'+frac:'');}
+  function unitsToString(units){const neg=units<0n;let n=neg?-units:units;const whole=n/UNIT,frac=(n%UNIT).toString().padStart(8,'0').replace(/0+$/,'');return (neg?'-':'')+whole.toString()+(frac?'.'+frac:'');}
   function displayUnits(units){const exact=unitsToString(units),[w,f='']=exact.split('.');return w+'.'+f.slice(0,8).padEnd(8,'0');}
   function feeFor(units){return 0n;}
   function message(tx){const m={type:tx.type,from:tx.from||null,to:tx.to||null,amount:tx.amount||0,nonce:tx.nonce,memo:tx.memo||''};if(tx.fee!==undefined)m.fee=tx.fee;return canonical(m)}
