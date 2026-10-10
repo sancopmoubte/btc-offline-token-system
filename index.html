@@ -34,11 +34,9 @@
 </div>
 <script type="module">
   const STORAGE='pqc_solo_chain_v1'; const SHARED_CHAIN_URL='https://raw.githubusercontent.com/sancopmoubte/btc-offline-token-system/main/chain.json';
-  const MINER_FUNCTION_URL='https://bnmzgivkpnscknerphao.supabase.co/functions/v1/register-miner';
-  const TRANSFER_FUNCTION_URL='https://bnmzgivkpnscknerphao.supabase.co/functions/v1/verify-and-submit-transfer';
-  const SUPABASE_URL='https://bnmzgivkpnscknerphao.supabase.co'; const SUPABASE_ANON_KEY='sb_publishable_pKeZYSs6V9szuQWPEvd_LA_7YDI_T6e'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
+  const ORACLE_NODE_URL='https://140-84-172-101.nip.io'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
   const DECIMAL_PLACES=8n; const UNIT=10n**DECIMAL_PLACES; const ZERO='0'.repeat(64); const GENESIS_HASH='3d8d22899a36c78da2aa082360f36ba770db9d312dd1a5c49687fec6287a39ee'; const enc=new TextEncoder();
-  let pqc, supabaseClient, state={chain:[],pending:[],identities:{},archived:{},active:null};
+  let pqc, state={chain:[],pending:[],identities:{},archived:{},active:null};
   let miningStatus={ready:false,remainingMs:600000,nextAvailableAt:0};
   const DB_NAME='catcat_mmc_local_v1', DB_STORE='state';
   let idbWriteVersion=0;
@@ -102,87 +100,33 @@
     }
     const supply=supplyOf(); if(supply>MAX_SUPPLY)throw Error('总发行量超过 21,000,000'); return {ok:true,balances,supply};
   }
-  const apiHeaders={apikey:SUPABASE_ANON_KEY,Authorization:'Bearer '+SUPABASE_ANON_KEY};
-  async function fetchSupabaseRows(extra='',descending=false){
-    const order=descending?'height.desc':'height.asc';
-    const base=SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash,prev_hash,block_text'+(extra?'&'+extra:'')+'&order='+order;
-    const size=1000, concurrency=4, rows=[];
-    async function readPage(start){
-      let lastError;
-      for(let attempt=0;attempt<3;attempt++){
-        const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
-        try{const page=await fetch(base,{headers:{...apiHeaders,Range:start+'-'+(start+size-1),Prefer:'count=exact'},cache:'no-store',signal:controller.signal});if(!page.ok)throw Error('Supabase 共享节点 HTTP '+page.status);const data=await page.json();return {start,data,total:page.headers.get('content-range')||''};}
-        catch(e){lastError=e;if(attempt<2)await new Promise(r=>setTimeout(r,700*(attempt+1)))}finally{clearTimeout(timer)}
-      }
-      throw lastError||Error('Supabase 分页读取失败');
-    }
-    const first=await readPage(0); rows.push(...first.data);
-    const match=first.total.match(/\/(\d+)$/),total=match?Number(match[1]):null;
-    if(typeof updateSyncProgress==='function')updateSyncProgress(rows.length,total);if(typeof setStatus==='function')setStatus(false,'正在同步共享节点…',`${rows.length}${total!==null?' / '+total:''} 个区块`);
-    if(first.data.length<size)return rows;
-    const starts=[]; if(total!==null){for(let start=size;start<total;start+=size)starts.push(start)}else{for(let start=size;;start+=size)starts.push(start)}
-    for(let i=0;i<starts.length;i+=concurrency){
-      const batch=await Promise.all(starts.slice(i,i+concurrency).map(readPage));
-      batch.sort((a,b)=>a.start-b.start); for(const page of batch)rows.push(...page.data);
-      if(typeof updateSyncProgress==='function')updateSyncProgress(Math.min(rows.length,total??rows.length),total);if(typeof setStatus==='function')setStatus(false,'正在同步共享节点…',`${Math.min(rows.length,total??rows.length)}${total!==null?' / '+total:''} 个区块`);
-      if(total===null&&batch.some(x=>x.data.length<size))break;
-    }
-    return rows;
+  async function oracle(path, options={}){const response=await fetch(ORACLE_NODE_URL+path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});const body=await response.json().catch(()=>({}));if(!response.ok||body.ok===false)throw Error(body.error||`Oracle 节点 HTTP ${response.status}`);return body}
+  async function loadOracleChain(){
+    if(typeof setStatus==='function')setStatus(false,'正在加载 Oracle 共享节点…','读取主链并验证哈希');
+    const body=await oracle('/api/chain'); const full=Array.isArray(body.chain)?body.chain:[]; if(!full.length)throw Error('Oracle 共享节点返回空主链');
+    const previous=state.chain; state.chain=full; state.pending=Array.isArray(body.pending)?body.pending:[];
+    try{await verifyChain();reconcilePending();state.sharedSource='oracle:140.84.172.101';const checked=state.chain.at(-1);state.verifiedHeight=checked.index;state.verifiedHash=checked.hash;return true}catch(e){state.chain=previous;throw Error('Oracle 共享主链验证失败：'+e.message)}
   }
-  async function getSharedChainTip(){const reply=await supabaseClient.rpc('get_chain_tip');if(reply.error)throw reply.error;return reply.data?.ok?reply.data:null}
-  async function loadSupabaseChain(){
-    const hasLocal=!state.localBackupOverride&&Array.isArray(state.chain)&&state.chain.length>0;
-    const readFull=async()=>{const rows=await fetchSupabaseRows();const full=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);if(!full.length)throw Error('共享节点返回空主链');return full};
-    if(hasLocal){
-      const latestRow=await getSharedChainTip();
-      if(!latestRow)throw Error('Supabase 共享节点没有主链');
-      const remoteHeight=Number(latestRow.height),localHeight=state.chain.length-1;
-      if(remoteHeight===localHeight&&latestRow.block_hash===state.chain.at(-1).hash){state.sharedSource='supabase:chain_blocks (轻量尖端校验：本地缓存已是主链最新)';return true;}
-      if(remoteHeight<0)throw Error('Supabase 共享节点没有主链');
-      if(remoteHeight>localHeight){
-        const rows=await fetchSupabaseRows('height=gt.'+localHeight),incoming=rows.map(x=>x.block_text?JSON.parse(x.block_text):null).filter(Boolean).sort((a,b)=>a.index-b.index);
-        if(incoming.length&&incoming[0].prevHash===state.chain.at(-1).hash){const previous=state.chain;state.chain=[...previous,...incoming];try{await verifyChain();reconcilePending();state.sharedSource='supabase:chain_blocks (轻量尖端 + 增量同步 '+incoming.length+' 个区块)';const checked=state.chain.at(-1);state.verifiedHeight=checked.index;state.verifiedHash=checked.hash;return true}catch(e){state.chain=previous;throw Error('增量区块验证失败：'+e.message)}}
-      }
-    }
-    if(typeof setStatus==='function')setStatus(false,'正在加载 Supabase 主链…','轻量尖端校验；哈希断裂时完整回退');
-    const previous=state.chain;const full=await readFull();state.chain=full;try{await verifyChain();reconcilePending();state.sharedSource='supabase:chain_blocks (完整校验回退)';const checked=state.chain.at(-1);state.verifiedHeight=checked.index;state.verifiedHash=checked.hash;return true}catch(e){state.chain=previous;throw Error('共享主链验证失败：'+e.message)}
+  async function refreshOraclePending(){try{const body=await oracle('/api/chain');state.pending=Array.isArray(body.pending)?body.pending:[];reconcilePending();}catch(e){console.warn('Oracle 待打包池同步失败',e)}}
+  async function refreshMiningStatus(){
+    try{const x=await oracle('/api/mining-status');miningStatus={ready:!!x.ready,remainingMs:Number(x.remaining_ms||0),nextAvailableAt:Number(x.next_available_at||0)};const btn=$('mineBtn');if(btn)btn.disabled=!activeId()||supplyOf()>=MAX_SUPPLY||!miningStatus.ready;if(!miningStatus.ready){const text='全局出块倒计时：'+formatCountdown(miningStatus.remainingMs)+'。Oracle 节点每 10 分钟允许出块。';if($('mineMsg')&&!$('mineMsg').classList.contains('success'))notice($('mineMsg'),text)}else if($('mineMsg')&&$('mineMsg').textContent.startsWith('全局出块倒计时'))notice($('mineMsg'),'全局出块时间已到；可以提交新区块。','success')}
+    catch(e){miningStatus={ready:false,remainingMs:600000,nextAvailableAt:0};const btn=$('mineBtn');if(btn)btn.disabled=true;if($('mineMsg'))notice($('mineMsg'),'正在获取 Oracle 节点挖矿倒计时，确认前不能挖矿。','error')}
   }
-
-  function subscribeSupabase(){
-    supabaseClient.channel('shared-chain-sync').on('postgres_changes',{event:'INSERT',schema:'public',table:'chain_blocks_raw'},async()=>{
-      try{
-        if(state.localBackupOverride)return;
-        if(await loadSupabaseChain()){save();render();setStatus(true,'共享链实时同步 ✓',`Supabase · ${state.chain.length-1} 个区块`)}
-      }catch(e){console.warn('共享链实时同步失败',e)}
-    }).subscribe();
-  }
+  function subscribeOracle(){setInterval(async()=>{try{if(await loadOracleChain()){save();render();setStatus(true,'Oracle 共享链实时同步 ✓',`Oracle · ${state.chain.length-1} 个区块`)}}catch(e){console.warn('Oracle 共享链同步失败',e)}},30000)}
   async function boot(){
     try{const noble=await import('https://cdn.jsdelivr.net/npm/@noble/post-quantum@0.7.1/ml-dsa.js/+esm'); pqc={ml_dsa44:noble.ml_dsa44};
-      const sb=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'); supabaseClient=sb.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
       const local=await loadPersistedState(); if(local)state=local; state.archived=state.archived||{};
       let loaded=false;
-      if(state.localBackupOverride&&Array.isArray(state.chain)&&state.chain.length){
-        const tipResponse=await fetch(SUPABASE_URL+'/rest/v1/chain_blocks_raw?select=height,block_hash&order=height.desc&limit=1',{headers:apiHeaders,cache:'no-store'}); const remoteTip=tipResponse.ok?(await tipResponse.json())[0]:null;
-        if(remoteTip&&Number(remoteTip.height)===0&&remoteTip.block_hash===GENESIS_HASH&&state.chain.length>1){
-          state.localBackupOverride=false; state.verifiedHeight=null; state.verifiedHash=null; loaded=await loadSupabaseChain();
-        }else{loaded=true;state.sharedSource='local:full-backup';}
-      }else{
-        loaded=await loadSupabaseChain();
-        if(!loaded){const sharedResponse=await fetch(SHARED_CHAIN_URL+'?t='+Date.now(),{cache:'no-store'}); if(sharedResponse.ok){const shared=await sharedResponse.json(); if(Array.isArray(shared.chain)&&shared.chain.length){state.chain=shared.chain; reconcilePending(); state.sharedSource='github:chain.json';}}}
-      }
+      try{loaded=await loadOracleChain()}catch(e){console.warn('Oracle 主链加载失败，尝试 GitHub 备份',e)}
+      if(!loaded){const sharedResponse=await fetch(SHARED_CHAIN_URL+'?t='+Date.now(),{cache:'no-store'}); if(sharedResponse.ok){const shared=await sharedResponse.json(); if(Array.isArray(shared.chain)&&shared.chain.length){state.chain=shared.chain; reconcilePending(); state.sharedSource='github:chain.json'; loaded=true;}}}
       for(const id of Object.values(state.identities||{})){if(id.publicKey&&!id.shortAddress)id.shortAddress=await address(id.publicKey)}
       if(!state.chain?.length)state.chain=[await makeGenesis()];
-      const tip=state.chain.at(-1); const cachedVerified=state.verifiedHeight===tip.index&&state.verifiedHash===tip.hash; const check=cachedVerified?{ok:true}:{ok:await verifyChain().then(()=>true).catch(e=>{throw e})}; if(!check.ok)throw Error('链初始化失败'); state.verifiedHeight=tip.index;state.verifiedHash=tip.hash; save(); render(); setStatus(true,'共享链完整性 ✓',`${state.sharedSource&&state.sharedSource.startsWith('supabase:')?'Supabase':'GitHub'} · ${state.chain.length-1} 个区块${cachedVerified?' · 本地验证缓存':''}`); subscribeSupabase();
-    }catch(e){console.error(e);setStatus(false,'共享链加载失败：'+e.message,'请检查 Supabase 共享节点或导入备份');render();}
+      const tip=state.chain.at(-1); const cachedVerified=state.verifiedHeight===tip.index&&state.verifiedHash===tip.hash; const check=cachedVerified?{ok:true}:{ok:await verifyChain().then(()=>true).catch(e=>{throw e})}; if(!check.ok)throw Error('链初始化失败'); state.verifiedHeight=tip.index;state.verifiedHash=tip.hash; save(); render(); setStatus(true,'共享链完整性 ✓',`${state.sharedSource&&state.sharedSource.startsWith('oracle:')?'Oracle':'GitHub'} · ${state.chain.length-1} 个区块${cachedVerified?' · 本地验证缓存':''}`); subscribeOracle(); refreshMiningStatus();
+    }catch(e){console.error(e);setStatus(false,'共享链加载失败：'+e.message,'请检查 Oracle 共享节点或导入备份');render();}
   }
   function updateSyncProgress(done,total){const box=$('syncProgress'),fill=$('syncProgressFill'),label=$('syncProgressLabel');if(!box)return;box.classList.remove('hidden');const known=Number.isFinite(total)&&total>0;const pct=known?Math.min(100,Math.round(done*100/total)):0;fill.style.width=pct+'%';label.textContent=known?`${done} / ${total} 个区块（${pct}%）`:`已同步 ${done} 个区块`}
   function setStatus(ok,text,meta){$('integrity').className='status '+(ok?'ok':'bad');$('integrityText').textContent=text;$('integrityMeta').textContent=meta}
   function formatCountdown(ms){const total=Math.max(0,Math.ceil(ms/1000));const h=Math.floor(total/3600),m=Math.floor((total%3600)/60),sec=total%60;return (h?h+'小时 ':'')+String(m).padStart(2,'0')+'分 '+String(sec).padStart(2,'0')+'秒'}
-  async function refreshMiningStatus(){
-    if(!supabaseClient)return;
-    try{const reply=await supabaseClient.rpc('get_mining_status');if(reply.error)throw reply.error;const x=reply.data||{};miningStatus={ready:!!x.ready,remainingMs:Number(x.remaining_ms||0),nextAvailableAt:Number(x.next_available_at||0)};const btn=$('mineBtn');if(btn)btn.disabled=!activeId()||supplyOf()>=MAX_SUPPLY||!miningStatus.ready;if(!miningStatus.ready){const text='全局出块倒计时：'+formatCountdown(miningStatus.remainingMs)+'。等待服务端 10 分钟间隔；其他地址也可在窗口到达后提交区块。';if($('mineMsg')&&!$('mineMsg').classList.contains('success'))notice($('mineMsg'),text)}else if($('mineMsg')&&$('mineMsg').textContent.startsWith('全局出块倒计时'))notice($('mineMsg'),'全局出块时间已到；可以提交新区块。','success')}
-    catch(e){miningStatus={ready:false,remainingMs:600000,nextAvailableAt:0};const btn=$('mineBtn');if(btn)btn.disabled=true;if($('mineMsg'))notice($('mineMsg'),'正在获取服务端挖矿倒计时，倒计时未确认前不能挖矿。','error')}
-  }
   function render(){
     const check=state.chain.length?replayFast():{balances:{}}; const supply=supplyOf(); const bal=state.active?availableBalance(state.active):0n; $('balance').textContent=displayUnits(bal); $('balance').title='精确余额：'+unitsToString(bal); $('height').textContent=Math.max(0,state.chain.length-1); $('pending').textContent=state.pending.length; $('txCount').textContent=state.chain.reduce((n,b)=>n+b.transactions.filter(t=>t.type!=='genesis').length,0); $('supply').textContent=supply.toLocaleString('en-US');
     const current=activeId(); $('myAddressBox').classList.toggle('hidden',!current); if(current){$('myAddress').value=current.shortAddress||current.address} $('identities').innerHTML=Object.values(state.identities).map(i=>`<div class="identity ${i.address===state.active?'selected':''}" data-address="${i.address}"><strong>${i.label||'身份'} ${i.address===state.active?'<span class="pill">当前</span>':''}</strong><span class="addr">${i.shortAddress||i.address}</span><button class="secondary copy-address" data-address="${i.shortAddress||i.address}">复制短地址</button><button class="danger delete-identity" data-address="${i.address}">删除身份</button></div>`).join('')||'<div class="notice">还没有身份。先生成一个身份，再开始铸造。</div>';
@@ -195,19 +139,7 @@
   function showPrivateKey(key){$('newPrivateKey').value=key;$('newKeyBox').classList.remove('hidden')}
   function downloadPrivateKey(){const key=$('newPrivateKey').value;if(!key)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([key+'\n'],{type:'text/plain'}));a.download='mmc-private-key.txt';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
   async function newIdentity(){try{const seed=crypto.getRandomValues(new Uint8Array(pqc.ml_dsa44.lengths.seed));const kp=pqc.ml_dsa44.keygen(seed);const pub=b64(kp.publicKey), secret=b64(kp.secretKey), addressId=await address(pub);state.identities[addressId]={address:addressId,publicKey:pub,shortAddress:addressId,secretKey:secret,label:'身份 '+(Object.keys(state.identities).length+1)};state.active=addressId;save();render();showPrivateKey(secret)}catch(e){console.error(e);notice($('identities'),'身份生成失败：'+e.message+'。请刷新页面重试。','error')}}
-  async function loginWithPrivateKey(){try{const text=$('privateKeyInput').value.trim();if(!text)throw Error('请粘贴私钥');const sk=unb64(text);if(sk.length!==pqc.ml_dsa44.lengths.secretKey)throw Error('私钥长度不正确：需要 ML-DSA-44 私钥');const pubBytes=pqc.ml_dsa44.getPublicKey(sk);const pub=b64(pubBytes),addressId=await address(pub);const old=state.identities[addressId]||{};state.identities[addressId]={...old,address:addressId,publicKey:pub,shortAddress:addressId,secretKey:text,label:old.label||'私钥登录身份'};state.active=addressId;save();render();if(!state.verifiedHeight){try{await loadSupabaseChain();save();render()}catch(e){console.warn('登录后共享链同步失败',e)}}notice($('loginMsg'),'私钥登录成功：已恢复 '+addressId+'，余额按已验证共享链重放。','success');$('privateKeyInput').value=''}catch(e){console.error(e);notice($('loginMsg'),'私钥登录失败：'+e.message,'error')}}
-  async function registerMiner(me){
-    if(!me?.secretKey||!me?.publicKey)throw Error('当前身份没有可用私钥，请重新导入该身份的私钥。');
-    const challengeResponse=await fetch(MINER_FUNCTION_URL,{method:'POST',headers:{...apiHeaders,'Content-Type':'application/json'},body:JSON.stringify({action:'challenge',address:me.address,publicKey:me.publicKey})});
-    const challenge=await challengeResponse.json().catch(()=>({}));
-    if(!challengeResponse.ok||!challenge.ok)throw Error(challenge.error||'服务器无法创建矿工登记挑战');
-    const signedMessage={domain:challenge.domain,challengeId:challenge.challengeId,challenge:challenge.challenge,address:challenge.address,publicKey:me.publicKey};
-    const signature=b64(pqc.ml_dsa44.sign(enc.encode(canonical(signedMessage)),unb64(me.secretKey)));
-    const registerResponse=await fetch(MINER_FUNCTION_URL,{method:'POST',headers:{...apiHeaders,'Content-Type':'application/json'},body:JSON.stringify({action:'register',challengeId:challenge.challengeId,address:me.address,publicKey:me.publicKey,signature})});
-    const result=await registerResponse.json().catch(()=>({}));
-    if(!registerResponse.ok||!result.ok)throw Error(result.error||'服务器拒绝矿工登记');
-    return {remainingMs:Number(result.remaining_ms||0),eligibleAt:Number(result.eligible_at||0)};
-  }
+  async function loginWithPrivateKey(){try{const text=$('privateKeyInput').value.trim();if(!text)throw Error('请粘贴私钥');const sk=unb64(text);if(sk.length!==pqc.ml_dsa44.lengths.secretKey)throw Error('私钥长度不正确：需要 ML-DSA-44 私钥');const pubBytes=pqc.ml_dsa44.getPublicKey(sk);const pub=b64(pubBytes),addressId=await address(pub);const old=state.identities[addressId]||{};state.identities[addressId]={...old,address:addressId,publicKey:pub,shortAddress:addressId,secretKey:text,label:old.label||'私钥登录身份'};state.active=addressId;save();render();if(!state.verifiedHeight){try{await loadOracleChain();save();render()}catch(e){console.warn('登录后 Oracle 共享链同步失败',e)}}notice($('loginMsg'),'私钥登录成功：已恢复 '+addressId+'，余额按已验证共享链重放。','success');$('privateKeyInput').value=''}catch(e){console.error(e);notice($('loginMsg'),'私钥登录失败：'+e.message,'error')}}
   async function mine(){
     if(!activeId())return;
     const supply=supplyOf(); if(supply>=MAX_SUPPLY){notice($('mineMsg'),'总发行量已达到 21,000,000 MMC。','error');return}
@@ -217,12 +149,12 @@
       await refreshMiningStatus();
       if(!miningStatus.ready){notice($('mineMsg'),'距离下一次出块还需 '+formatCountdown(miningStatus.remainingMs)+'。','error');return;}
       let result=null,error=null;
-      for(let attempt=0;attempt<4;attempt++){const reply=await supabaseClient.rpc('mine_block_locked',{p_to:state.active,p_transactions_text:JSON.stringify(state.pending)});result=reply.data;error=reply.error;if(!error&&result?.ok)break;const msg=error?.message||'';if(msg.includes('MINING_INTERVAL')||msg.includes('MAX_SUPPLY')||msg.includes('CHAIN_CONFLICT')||attempt===3)break;await new Promise(r=>setTimeout(r,1500*(attempt+1)))}
-      if(error||!result?.ok){const msg=error?.message||'服务端拒绝出块';if(msg.includes('MINING_INTERVAL'))notice($('mineMsg'),'距离下一次出块还需等待 10 分钟。','error');else if(msg.includes('MAX_SUPPLY'))notice($('mineMsg'),'总发行量已达到 21,000,000 MMC。','error');else if(msg.includes('CHAIN_CONFLICT')){await loadSupabaseChain();notice($('mineMsg'),'共享节点刚刚产生了新区块，已重新同步。','error')}else notice($('mineMsg'),'新区块发布失败（已自动重试）：'+msg,'error');return}
-      await loadSupabaseChain();reconcilePending();state.verifiedHeight=null;state.verifiedHash=null;save();render();notice($('mineMsg'),`新区块已生成：奖励 ${result.block_text?JSON.parse(result.block_text).transactions.find(x=>x.type==='coinbase').amount:rewardForMinedBlocks(coinbaseCount())} MMC。`,'success')
+      for(let attempt=0;attempt<4;attempt++){try{result=await oracle('/api/mine',{method:'POST',body:JSON.stringify({to:state.active,transactions:state.pending})});error=null}catch(e){result=null;error=e;}if(!error&&result?.ok)break;const msg=error?.message||'';if(msg.includes('MINING_INTERVAL')||msg.includes('MAX_SUPPLY')||msg.includes('CHAIN_CONFLICT')||attempt===3)break;await new Promise(r=>setTimeout(r,1500*(attempt+1)))}
+      if(error||!result?.ok){const msg=error?.message||'服务端拒绝出块';if(msg.includes('MINING_INTERVAL'))notice($('mineMsg'),'距离下一次出块还需等待 10 分钟。','error');else if(msg.includes('MAX_SUPPLY'))notice($('mineMsg'),'总发行量已达到 21,000,000 MMC。','error');else if(msg.includes('CHAIN_CONFLICT')){await loadOracleChain();notice($('mineMsg'),'Oracle 节点刚刚产生了新区块，已重新同步。','error')}else notice($('mineMsg'),'新区块发布失败（已自动重试）：'+msg,'error');return}
+      await loadOracleChain();reconcilePending();state.verifiedHeight=null;state.verifiedHash=null;save();render();notice($('mineMsg'),`新区块已生成：奖励 ${result.block_text?JSON.parse(result.block_text).transactions.find(x=>x.type==='coinbase').amount:rewardForMinedBlocks(coinbaseCount())} MMC。`,'success')
     }catch(e){console.error(e);notice($('mineMsg'),'出块失败：'+e.message,'error')}finally{$('mineBtn').disabled=!activeId()||supplyOf()>=MAX_SUPPLY}
   }
-  async function transfer(){const to=$('toAddress').value.trim(), amountText=$('amount').value.trim(), me=activeId();if(!me)return;if(!/^pqc1[A-Za-z0-9_-]+$/.test(to))return notice($('transferMsg'),'地址格式错误：必须是以 pqc1 开头的完整地址。','error');let amountUnits;try{amountUnits=toUnits(amountText)}catch(e){return notice($('transferMsg'),e.message,'error')}if(amountUnits<=0n)return notice($('transferMsg'),'请输入大于 0 的金额。','error');const feeUnits=0n,totalUnits=amountUnits;const bal=availableBalance(state.active);if(totalUnits>bal)return notice($('transferMsg'),`余额不足：当前链上余额 ${unitsToString(bal)}。`,'error');const amount=amountText.replace(/^(\d+)\.(\d*?)0+$/,'$1.$2').replace(/\.$/,'');const tx={type:'transfer',from:me.shortAddress||state.active,to,publicKey:me.publicKey,amount,nonce:crypto.randomUUID(),memo:$('memo').value.trim()};tx.signature=b64(pqc.ml_dsa44.sign(enc.encode(message(tx)),unb64(me.secretKey)));try{const response=await fetch(TRANSFER_FUNCTION_URL,{method:'POST',headers:{...apiHeaders,'Content-Type':'application/json'},body:JSON.stringify({tx})});const result=await response.json().catch(()=>({}));if(!response.ok||result.ok===false)throw Error(result.error||'共享节点拒绝交易');state.pending.push(tx);save();render();notice($('transferMsg'),'交易已验签并写入共享待打包池；关闭浏览器也不会丢失。','success')}catch(e){console.error(e);notice($('transferMsg'),'交易未能写入共享节点：'+e.message,'error');return}$('toAddress').value='';$('amount').value='';$('memo').value='' }
+  async function transfer(){const to=$('toAddress').value.trim(), amountText=$('amount').value.trim(), me=activeId();if(!me)return;if(!/^pqc1[A-Za-z0-9_-]+$/.test(to))return notice($('transferMsg'),'地址格式错误：必须是以 pqc1 开头的完整地址。','error');let amountUnits;try{amountUnits=toUnits(amountText)}catch(e){return notice($('transferMsg'),e.message,'error')}if(amountUnits<=0n)return notice($('transferMsg'),'请输入大于 0 的金额。','error');const feeUnits=0n,totalUnits=amountUnits;const bal=availableBalance(state.active);if(totalUnits>bal)return notice($('transferMsg'),`余额不足：当前链上余额 ${unitsToString(bal)}。`,'error');const amount=amountText.replace(/^(\d+)\.(\d*?)0+$/,'$1.$2').replace(/\.$/,'');const tx={type:'transfer',from:me.shortAddress||state.active,to,publicKey:me.publicKey,amount,nonce:crypto.randomUUID(),memo:$('memo').value.trim()};tx.signature=b64(pqc.ml_dsa44.sign(enc.encode(message(tx)),unb64(me.secretKey)));try{const response=await fetch(ORACLE_NODE_URL+'/api/transfer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tx})});const result=await response.json().catch(()=>({}));if(!response.ok||result.ok===false)throw Error(result.error||'共享节点拒绝交易');state.pending.push(tx);save();render();notice($('transferMsg'),'交易已验签并写入共享待打包池；关闭浏览器也不会丢失。','success')}catch(e){console.error(e);notice($('transferMsg'),'交易未能写入共享节点：'+e.message,'error');return}$('toAddress').value='';$('amount').value='';$('memo').value='' }
   $('newIdentity').onclick=newIdentity;$('loginPrivateKey').onclick=loginWithPrivateKey;$('copyPrivateKey').onclick=()=>navigator.clipboard.writeText($('newPrivateKey').value).then(()=>notice($('loginMsg'),'私钥已复制，请立即保存到安全位置。','success'));$('downloadPrivateKey').onclick=downloadPrivateKey;$('mineBtn').onclick=mine;$('transferBtn').onclick=transfer;
   document.querySelectorAll('[data-tab]').forEach(btn=>btn.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));btn.classList.add('active');$(btn.dataset.tab).classList.add('active')});
   function downloadJson(name,data){const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)}
