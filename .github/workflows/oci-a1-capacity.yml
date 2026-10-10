@@ -1,15 +1,15 @@
 name: OCI A1 capacity watcher
 
 on:
-  # GitHub scheduled workflows are best-effort; 5 minutes is the shortest interval.
+  # GitHub scheduled workflows are best-effort; avoid minute 00/high-load boundaries.
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "2-57/5 * * * *"
   workflow_dispatch:
     inputs:
       auto_create:
         description: "发现容量后自动创建 1 OCPU / 1 GB A1 实例"
         required: true
-        default: false
+        default: true
         type: boolean
 
 permissions:
