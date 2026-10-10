@@ -8,6 +8,7 @@ const PORT = Number(process.env.PORT || 8787);
 const DATA_DIR = process.env.DATA_DIR || '/var/lib/mmc-node';
 const CHAIN_FILE = path.join(DATA_DIR, 'chain.json');
 const PENDING_FILE = path.join(DATA_DIR, 'pending.json');
+const SCHEDULE_FILE = path.join(DATA_DIR, 'schedule.json');
 const MAX_SUPPLY = 21000000;
 const INITIAL_REWARD = 50;
 const HALVING_INTERVAL = 210000;
@@ -15,6 +16,7 @@ const MINING_INTERVAL_MS = 10 * 60 * 1000;
 const GENESIS = { index: 0, prevHash: '0'.repeat(64), timestamp: 0, transactions: [{ type: 'genesis', amount: 0 }], hash: '3d8d22899a36c78da2aa082360f36ba770db9d312dd1a5c49687fec6287a39ee' };
 let chain = [];
 let pending = [];
+let initialAvailableAt = 0;
 let writeLock = Promise.resolve();
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -24,6 +26,12 @@ chain = Array.isArray(saved) ? saved : (Array.isArray(saved.chain) ? saved.chain
 if (!chain.length) chain = [GENESIS];
 pending = loadJson(PENDING_FILE, []);
 if (!Array.isArray(pending)) pending = [];
+const savedSchedule = loadJson(SCHEDULE_FILE, {});
+initialAvailableAt = Number(savedSchedule.initialAvailableAt || 0);
+if (!Number.isFinite(initialAvailableAt) || initialAvailableAt <= 0) {
+  initialAvailableAt = Date.now() + MINING_INTERVAL_MS;
+  fs.writeFileSync(SCHEDULE_FILE, JSON.stringify({ initialAvailableAt }, null, 2));
+}
 function persist() {
   writeLock = writeLock.then(async () => {
     const tmpChain = `${CHAIN_FILE}.tmp`, tmpPending = `${PENDING_FILE}.tmp`;
@@ -55,7 +63,7 @@ function balances() { const out = new Map(); for (const block of chain) for (con
 function pendingCost(address) { return pending.filter(x => x.from === address).reduce((n, x) => n + amountUnits(x.amount), 0n); }
 function coinbaseCount() { return chain.reduce((n, b) => n + (b.transactions || []).filter(x => x.type === 'coinbase').length, 0); }
 function reward() { const issued = chain.reduce((n, b) => n + (b.transactions || []).filter(x => x.type === 'coinbase').reduce((m, x) => m + Number(x.amount || 0), 0), 0); const r = INITIAL_REWARD / (2 ** Math.floor(coinbaseCount() / HALVING_INTERVAL)); return Math.max(0, Math.min(r, MAX_SUPPLY - issued)); }
-function miningStatus() { const tip = chain.at(-1); const next = tip.index === 0 ? (Number(process.env.INITIAL_AVAILABLE_AT || (Date.now() + MINING_INTERVAL_MS))) : (Number(tip.timestamp) + MINING_INTERVAL_MS); return { ok: true, height: tip.index, next_available_at: next, remaining_ms: Math.max(0, next - Date.now()), ready: Date.now() >= next, interval_minutes: 10, miner_mode: 'single' }; }
+function miningStatus() { const tip = chain.at(-1); const next = tip.index === 0 ? initialAvailableAt : (Number(tip.timestamp) + MINING_INTERVAL_MS); return { ok: true, height: tip.index, next_available_at: next, remaining_ms: Math.max(0, next - Date.now()), ready: Date.now() >= next, interval_minutes: 10, miner_mode: 'single' }; }
 async function handle(req, res) {
   if (req.method === 'OPTIONS') return json(res, { ok: true });
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
