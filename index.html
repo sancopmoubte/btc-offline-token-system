@@ -34,7 +34,7 @@
 </div>
 <script type="module">
   const STORAGE='pqc_solo_chain_v1'; const SHARED_CHAIN_URL='https://raw.githubusercontent.com/sancopmoubte/btc-offline-token-system/main/chain.json';
-  const ORACLE_NODE_URL='https://140-84-172-101.nip.io'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
+  const ORACLE_NODE_URL='https://140-84-172-101.nip.io/btc-api'; const MAX_SUPPLY=21000000; const INITIAL_REWARD=50; const HALVING_INTERVAL=210000; const SCHEDULE='halving-v1';
   const DECIMAL_PLACES=8n; const UNIT=10n**DECIMAL_PLACES; const ZERO='0'.repeat(64); const GENESIS_HASH='3d8d22899a36c78da2aa082360f36ba770db9d312dd1a5c49687fec6287a39ee'; const enc=new TextEncoder();
   let pqc, state={chain:[],pending:[],identities:{},archived:{},active:null};
   let miningStatus={ready:false,remainingMs:600000,nextAvailableAt:0};
