@@ -87,7 +87,7 @@ async function handle(req, res) {
       const status = miningStatus(); if (!status.ready) fail('MINING_INTERVAL');
       const r = reward(); if (r <= 0) fail('MAX_SUPPLY');
       for (const tx of transactions) validateTx(tx);
-      const currentPending = new Set(pending.map(x => x.nonce)); const accepted = transactions.filter(x => currentPending.has(x.nonce));
+      const pendingByNonce = new Map(pending.map(x => [x.nonce, x])); const accepted = []; for (const nonce of new Set(transactions.map(x => x.nonce))) { const orig = pendingByNonce.get(nonce); if (orig) accepted.push(orig); }
       const coinbase = { type: 'coinbase', to, amount: r, schedule: 'halving-v1' };
       const next = chain.at(-1); const block = { index: next.index + 1, prevHash: next.hash, timestamp: Date.now(), transactions: [...accepted, coinbase] };
       block.hash = sha256Hex(JSON.stringify({ index: block.index, prevHash: block.prevHash, timestamp: block.timestamp, transactions: block.transactions }));
