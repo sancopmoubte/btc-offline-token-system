@@ -77,7 +77,7 @@ async function handle(req, res) {
       if (addressFromPublicKey(publicKey) !== tx.from) fail('Sender does not match public key');
       if (!ml_dsa44.verify(signature, new TextEncoder().encode(JSON.stringify(txMessage(tx))), publicKey)) fail('INVALID_SIGNATURE');
       const bal = balances(); if ((bal.get(tx.from) || 0n) - pendingCost(tx.from) < amountUnits(tx.amount)) fail('INSUFFICIENT_BALANCE');
-      if (pending.some(x => x.nonce === tx.nonce)) fail('DUPLICATE_NONCE');
+      if (pending.some(x => x.nonce === tx.nonce) || chain.some(b => (b.transactions || []).some(x => x.type === 'transfer' && x.nonce === tx.nonce))) fail('DUPLICATE_NONCE');
       pending.push(tx); await persist(); return json(res, { ok: true, status: 'pending' });
     }
     if (req.method === 'POST' && url.pathname === '/api/mine') {
