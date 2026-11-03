@@ -101,13 +101,92 @@
     const supply=supplyOf(); if(supply>MAX_SUPPLY)throw Error('总发行量超过 21,000,000'); return {ok:true,balances,supply};
   }
   async function oracle(path, options={}){const response=await fetch(ORACLE_NODE_URL+path,{...options,headers:{'Content-Type':'application/json',...(options.headers||{})},cache:'no-store'});const body=await response.json().catch(()=>({}));if(!response.ok||body.ok===false)throw Error(body.error||`Oracle 节点 HTTP ${response.status}`);return body}
+    async function verifySegment(newBlocks){
+    const oldTip=state.chain.at(-1);
+    if(!oldTip)throw Error('缺少已验证链');
+    if(!newBlocks.length)return {ok:true};
+    if(newBlocks[0].index!==oldTip.index+1)throw Error('增量区块高度不连续');
+    if(newBlocks[0].prevHash!==oldTip.hash)throw Error('增量区块前哈希断裂');
+    const balances=replayFast().balances;
+    const seen=new Set();
+    for(const b of state.chain)for(const tx of b.transactions||[])if(tx.type==='transfer'&&tx.nonce)seen.add(tx.nonce);
+    let minedBefore=coinbaseCount();
+    for(let i=0;i<newBlocks.length;i++){
+      const b=newBlocks[i];
+      if(b.index!==oldTip.index+1+i)throw Error('增量区块高度错误');
+      if(i&&b.prevHash!==newBlocks[i-1].hash)throw Error('增量区块前哈希断裂');
+      if(await blockHash(b)!==b.hash)throw Error('增量区块哈希被篡改');
+      for(const tx of b.transactions){
+        if(tx.type==='coinbase'){
+          const expected=rewardForMinedBlocks(minedBefore);
+          const scheduled=tx.schedule===SCHEDULE;
+          const validReward=scheduled?Math.abs(Number(tx.amount)-expected)<1e-9:Number(tx.amount)===1;
+          if(!validReward||!tx.to)throw Error('非法增量 coinbase 奖励');
+          const toKey=resolveAddress(tx.to);
+          balances[toKey]=(balances[toKey]||0n)+toUnits(tx.amount);
+          minedBefore++;
+          continue;
+        }
+        if(tx.type!=='transfer'||!tx.from||!tx.to||toUnits(tx.amount)<=0n||seen.has(tx.nonce))throw Error('非法或重复增量交易');
+        const id=Object.values({...state.identities,...state.archived}).find(x=>x.address===tx.from||x.shortAddress===tx.from);
+        const pub=tx.publicKey||(id&&id.publicKey);
+        if(!pub)throw Error('增量交易缺少发送方公钥');
+        if(tx.publicKey){const expected=await address(pub);if(tx.from!==expected&&(!id||tx.from!==id.address))throw Error('增量地址与公钥不匹配')}
+        const valid=pqc.ml_dsa44.verify(unb64(tx.signature),enc.encode(message(tx)),unb64(pub));
+        if(!valid)throw Error('增量交易签名验证失败');
+        const from=resolveAddress(tx.from),to=resolveAddress(tx.to);
+        const txUnits=toUnits(tx.amount);
+        const feeUnits=tx.fee===undefined?0n:toUnits(tx.fee);
+        if(feeUnits!==0n)throw Error('当前协议不强制手续费');
+        if((balances[from]||0n)<txUnits)throw Error('增量链上余额不足');
+        balances[from]-=txUnits;
+        balances[to]=(balances[to]||0n)+txUnits;
+        seen.add(tx.nonce);
+      }
+    }
+    return {ok:true};
+  }
   async function loadOracleChain(){
+    const cached=state.chain.length&&state.verifiedHeight!==null&&state.verifiedHeight!==undefined&&state.verifiedHash;
+    if(cached){
+      try{
+        const tip=await oracle('/api/tip');
+        const localTip=state.chain.at(-1);
+        if(tip.height===localTip.index&&tip.hash===localTip.hash){
+          const body=await oracle('/api/chain?since='+localTip.index);
+          state.pending=Array.isArray(body.pending)?body.pending:[];
+          reconcilePending();
+          return true;
+        }
+        if(tip.height>localTip.index){
+          const body=await oracle('/api/chain?since='+localTip.index);
+          const fresh=Array.isArray(body.chain)?body.chain:[];
+          if(fresh.length&&fresh.at(-1).index===tip.height&&fresh.at(-1).hash===tip.hash){
+            const previous=state.chain;
+            try{
+              await verifySegment(fresh);
+              state.chain=[...previous,...fresh];
+              state.pending=Array.isArray(body.pending)?body.pending:[];
+              reconcilePending();
+              if(supplyOf()>MAX_SUPPLY)throw Error('总发行量超过 21,000,000');
+              state.sharedSource='oracle:140.84.172.101';
+              state.verifiedHeight=tip.height;
+              state.verifiedHash=tip.hash;
+              return true;
+            }catch(e){state.chain=previous;console.warn('增量同步校验未通过，回落全量同步',e)}
+          }
+        }
+      }catch(e){console.warn('增量同步失败，回落全量同步',e)}
+    }
+    return loadOracleChainFull();
+  }
+  async function loadOracleChainFull(){
     if(typeof setStatus==='function')setStatus(false,'正在加载 Oracle MMC 共享节点…','读取主链并验证哈希');
     const body=await oracle('/api/chain'); const full=Array.isArray(body.chain)?body.chain:[]; if(!full.length)throw Error('Oracle MMC 共享节点返回空主链');
     const previous=state.chain; state.chain=full; state.pending=Array.isArray(body.pending)?body.pending:[];
     try{await verifyChain();reconcilePending();state.sharedSource='oracle:140.84.172.101';const checked=state.chain.at(-1);state.verifiedHeight=checked.index;state.verifiedHash=checked.hash;return true}catch(e){state.chain=previous;throw Error('Oracle 共享主链验证失败：'+e.message)}
   }
-  async function refreshOraclePending(){try{const body=await oracle('/api/chain');state.pending=Array.isArray(body.pending)?body.pending:[];reconcilePending();}catch(e){console.warn('Oracle 待打包池同步失败',e)}}
+  async function refreshOraclePending(){try{const body=await oracle(state.chain.length?('/api/chain?since='+state.chain.at(-1).index):'/api/chain');state.pending=Array.isArray(body.pending)?body.pending:[];reconcilePending();}catch(e){console.warn('Oracle 待打包池同步失败',e)}}
   async function refreshMiningStatus(){
     try{const x=await oracle('/api/mining-status');miningStatus={ready:!!x.ready,remainingMs:Number(x.remaining_ms||0),nextAvailableAt:Number(x.next_available_at||0)};const btn=$('mineBtn');if(btn)btn.disabled=!activeId()||supplyOf()>=MAX_SUPPLY||!miningStatus.ready;if(!miningStatus.ready){const text='全局出块倒计时：'+formatCountdown(miningStatus.remainingMs)+'。Oracle 节点每 10 分钟允许出块。';if($('mineMsg')&&!$('mineMsg').classList.contains('success'))notice($('mineMsg'),text)}else if($('mineMsg')&&$('mineMsg').textContent.startsWith('全局出块倒计时'))notice($('mineMsg'),'全局出块时间已到；可以提交新区块。','success')}
     catch(e){miningStatus={ready:false,remainingMs:600000,nextAvailableAt:0};const btn=$('mineBtn');if(btn)btn.disabled=true;if($('mineMsg'))notice($('mineMsg'),'正在获取 Oracle 节点挖矿倒计时，确认前不能挖矿。','error')}
