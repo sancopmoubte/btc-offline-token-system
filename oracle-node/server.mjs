@@ -33,14 +33,18 @@ if (!Number.isFinite(initialAvailableAt) || initialAvailableAt <= 0) {
   fs.writeFileSync(SCHEDULE_FILE, JSON.stringify({ initialAvailableAt }, null, 2));
 }
 function persist() {
-  writeLock = writeLock.then(async () => {
+  // 队列容错：某次写入失败只让本次调用报错，不破坏后续写入队列。
+  // writeLock（队列尾）永不 reject，保证排队中的下一次写入仍会执行；
+  // run 照常 reject，调用方能如实收到写入失败，不会谎报成功。
+  const run = writeLock.then(async () => {
     const tmpChain = `${CHAIN_FILE}.tmp`, tmpPending = `${PENDING_FILE}.tmp`;
     await fs.promises.writeFile(tmpChain, JSON.stringify({ chain }, null, 2));
     await fs.promises.writeFile(tmpPending, JSON.stringify(pending, null, 2));
     await fs.promises.rename(tmpChain, CHAIN_FILE);
     await fs.promises.rename(tmpPending, PENDING_FILE);
-  });
-  return writeLock;
+  }).catch((e) => { console.error(`[persist] write failed: ${e?.message || e}`); throw e; });
+  writeLock = run.catch(() => {});
+  return run;
 }
 function json(res, body, status = 200) { const text = JSON.stringify(body); res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'content-type', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS', 'Cache-Control': 'no-store' }); res.end(text); }
 function readBody(req) { return new Promise((resolve, reject) => { let data = ''; req.on('data', c => { data += c; if (data.length > 2_000_000) reject(new Error('BODY_TOO_LARGE')); }); req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch { reject(new Error('INVALID_JSON')); } }); req.on('error', reject); }); }
@@ -68,7 +72,17 @@ async function handle(req, res) {
   if (req.method === 'OPTIONS') return json(res, { ok: true });
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
-    if (req.method === 'GET' && url.pathname === '/api/chain') return json(res, { ok: true, chain, pending });
+    if (req.method === 'GET' && url.pathname === '/api/tip') { const tip = chain.at(-1); return json(res, { ok: true, height: tip.index, hash: tip.hash, timestamp: tip.timestamp }); }
+    if (req.method === 'GET' && url.pathname === '/api/chain') {
+      const since = url.searchParams.get('since');
+      if (since !== null) {
+        const n = Number(since);
+        if (!Number.isInteger(n) || n < 0) return json(res, { ok: false, error: 'INVALID_SINCE' }, 400);
+        const tip = chain.at(-1);
+        return json(res, { ok: true, chain: chain.filter((b) => b.index > n), pending, height: tip.index, hash: tip.hash });
+      }
+      return json(res, { ok: true, chain, pending });
+    }
     if (req.method === 'GET' && url.pathname === '/api/mining-status') return json(res, miningStatus());
     if (req.method === 'POST' && url.pathname === '/api/transfer') {
       const { tx } = await readBody(req); validateTx(tx);
